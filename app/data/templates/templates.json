@@ -1,0 +1,56 @@
+{
+    "tpl_stock_garamond_b5": {
+        "id": "tpl_stock_garamond_b5",
+        "name": "Stock Garamond B5",
+        "owner": "stock",
+        "stock": true,
+        "mainTypPath": "typeset/typst/layout/Garamond-brsnoba5-layout.typ",
+        "variables": {
+            "font-family": "Garamond Premier Pro",
+            "font-size": "9pt",
+            "page-width": "143.5mm",
+            "page-height": "210mm"
+        },
+        "createdAt": "2026-03-21T00:00:00Z"
+    },
+    "tpl_stock_times_b5": {
+        "id": "tpl_stock_times_b5",
+        "name": "Stock Times B5",
+        "owner": "stock",
+        "stock": true,
+        "mainTypPath": "typeset/typst/layout/Times-brsnoba5-layout.typ",
+        "variables": {
+            "font-family": "Times New Roman",
+            "font-size": "9pt",
+            "page-width": "143.5mm",
+            "page-height": "210mm"
+        },
+        "createdAt": "2026-03-21T00:00:00Z"
+    },
+    "tpl_stock_basic_test_b5": {
+        "id": "tpl_stock_basic_test_b5",
+        "name": "Stock Basic Test B5",
+        "owner": "stock",
+        "stock": true,
+        "mainTypPath": "typeset/typst/layout/Basic-test-layout.typ",
+        "variables": {
+            "page-width": "143.5mm",
+            "page-height": "210mm"
+        },
+        "createdAt": "2026-03-21T00:00:00Z"
+    },
+    "tpl_c9fed8490bcd": {
+        "id": "tpl_c9fed8490bcd",
+        "name": "Fork demo",
+        "owner": "user-demo",
+        "stock": false,
+        "mainTypPath": "typeset/typst/layout/Garamond-brsnoba5-layout.typ",
+        "variables": {
+            "font-family": "Garamond Premier Pro",
+            "font-size": "9pt",
+            "page-width": "143.5mm",
+            "page-height": "210mm"
+        },
+        "createdAt": "2026-03-21T09:32:15+00:00"
+    }
+}
