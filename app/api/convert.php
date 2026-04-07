@@ -15,7 +15,11 @@ $templatePath = (string)($body["templatePath"] ?? "typeset/typst/layout/Garamond
 $text = preg_replace('/\s+([;:!?])/u', "\u{00A0}$1", $text ?? "") ?? $text;
 $text = preg_replace('/(\d+)\s+(%|kg|g|cm|mm|m|km|€)/u', "$1\u{00A0}$2", $text ?? "") ?? $text;
 
-$typst = "#import \"../shared/layout-base.typ\": apply-layout, default-config\n\n";
+$importPath = $templatePath;
+if ($importPath === "") {
+    $importPath = "typeset/typst/layout/Garamond-brsnoba5-layout.typ";
+}
+$typst = "#import " . json_encode($importPath, JSON_UNESCAPED_SLASHES) . ": apply-layout, default-config\n\n";
 $typst .= "#let conf = (..default-config, title: " . json_encode($title) . ", author: " . json_encode($author) . ")\n\n";
 $typst .= "#let book-body = [\n";
 $typst .= $text . "\n";

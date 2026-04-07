@@ -40,7 +40,6 @@ obbwasm/
   typeset/
     old latex/
     typst/
-      shared/
       layout/
       impose/
       cover/

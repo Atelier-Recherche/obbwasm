@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -122,6 +122,7 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false);
   const [previewImgDataUrl, setPreviewImgDataUrl] = useState("");
   const [bibFile, setBibFile] = useState<File | null>(null);
+  const [colorTheme, setColorTheme] = useState<"light" | "dark">("light");
 
   const imageRefs = useMemo(() => extractMarkdownImages(sourceText), [sourceText]);
   const lintIssues = useMemo(() => findInvisibleChars(sourceText), [sourceText]);
@@ -129,6 +130,27 @@ export default function App() {
     () => templates.find((t) => t.id === selectedTemplate),
     [templates, selectedTemplate],
   );
+
+  useEffect(() => {
+    const saved = localStorage.getItem("obbwasm-theme");
+    if (saved === "dark" || saved === "light") {
+      setColorTheme(saved);
+      document.documentElement.dataset.theme = saved;
+      return;
+    }
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false;
+    const initial = prefersDark ? "dark" : "light";
+    setColorTheme(initial);
+    document.documentElement.dataset.theme = initial;
+  }, []);
+
+  function toggleColorTheme() {
+    const next = colorTheme === "dark" ? "light" : "dark";
+    setColorTheme(next);
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("obbwasm-theme", next);
+  }
+
   const templatePageW = parseMm(selectedTemplateObj?.variables?.["page-width"], 143.5);
   const templatePageH = parseMm(selectedTemplateObj?.variables?.["page-height"], 210);
   const bookFormat = `${templatePageW}x${templatePageH}`;
@@ -371,19 +393,10 @@ export default function App() {
         return;
       }
 
-      const sharedRes = await fetch(`${apiBase}/template-source.php?path=${encodeURIComponent("typeset/typst/shared/layout-base.typ")}`);
-      const sharedData = await sharedRes.json();
-      if (!sharedData.ok || !sharedData.source) {
-        setStatus(`Shared template non charge: ${sharedData.error ?? "inconnu"}`);
-        pushLog(`Shared load error: ${sharedData.error ?? "inconnu"}`);
-        return;
-      }
-
       const compiler = await ensureWasmCompiler();
       compiler.reset();
       compiler.resetShadow();
-      compiler.addSource("/shared/layout-base.typ", String(sharedData.source));
-      compiler.addSource("/template.typ", String(tplData.source).replace('../shared/layout-base.typ', "/shared/layout-base.typ"));
+      compiler.addSource("/template.typ", String(tplData.source));
       compiler.addSource("/content.typ", generatedTypst);
       compiler.addSource(
         "/main.typ",
@@ -404,7 +417,7 @@ export default function App() {
           `}`,
         ].join("\n"),
       );
-      pushLog(`Main.typ preview: opts(title/author/edition/cover-page/section-new-page/toc).`);
+      pushLog("Main.typ: opts (mise en page = fichier .typ du template uniquement).");
       const compiled = await compiler.runWithWorld(
         {
           root: "/",
@@ -512,6 +525,9 @@ export default function App() {
         <button onClick={downloadGeneratedPdf}>Telecharger PDF genere</button>
         <button onClick={exportPrintPack}>Generer pack impression</button>
         <button onClick={() => setShowDebug((v) => !v)}>{showDebug ? "Masquer debug" : "Afficher debug"}</button>
+        <button type="button" onClick={toggleColorTheme} title="Basculer theme clair / sombre">
+          Theme: {colorTheme === "dark" ? "sombre" : "clair"}
+        </button>
         <span>WASM: {wasmReady ? "pret" : "non initialise"}</span>
       </div>
 

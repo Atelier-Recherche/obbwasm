@@ -1,7 +1,29 @@
 :root {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #111;
-  background: #f5f6f8;
+  --bg: #f5f6f8;
+  --surface: #fff;
+  --text: #111;
+  --muted: #555;
+  --border: #ddd;
+  --input-border: #c8ccd3;
+  --accent: #0d6efd;
+  --warn: #9a3b00;
+}
+
+html[data-theme="dark"] {
+  --bg: #1a1b1e;
+  --surface: #25262b;
+  --text: #e8e9ed;
+  --muted: #a0a4b0;
+  --border: #3d3f48;
+  --input-border: #4a4d58;
+  --accent: #4d94ff;
+  --warn: #ffb86b;
+}
+
+:root {
+  color: var(--text);
+  background: var(--bg);
 }
 
 body {
@@ -20,7 +42,7 @@ body {
 
 .sub {
   margin: 0 0 12px;
-  color: #555;
+  color: var(--muted);
 }
 
 .toolbar,
@@ -39,14 +61,14 @@ body {
 }
 
 .panel {
-  background: #fff;
-  border: 1px solid #ddd;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
 }
 
 .tabs button.active {
-  background: #0d6efd;
+  background: var(--accent);
   color: #fff;
 }
 
@@ -55,8 +77,10 @@ select,
 button,
 textarea {
   padding: 8px;
-  border: 1px solid #c8ccd3;
+  border: 1px solid var(--input-border);
   border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
 }
 
 textarea {
@@ -72,14 +96,14 @@ label {
 }
 
 .warn {
-  color: #9a3b00;
+  color: var(--warn);
   font-weight: 600;
 }
 
 .preview {
   width: 100%;
   height: 480px;
-  border: 1px solid #c8ccd3;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   margin-top: 10px;
 }
@@ -87,12 +111,12 @@ label {
 .pdf-image-preview {
   width: 100%;
   max-width: 100%;
-  border: 1px solid #c8ccd3;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
-  background: white;
+  background: var(--surface);
   margin-top: 10px;
 }
 
 footer {
-  color: #555;
+  color: var(--muted);
 }

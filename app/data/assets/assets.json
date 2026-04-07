@@ -190,5 +190,21 @@
         "size": 44065,
         "storedAs": "data/assets/files/asset_83871bdb1d84_guide_telechargement.md",
         "createdAt": "2026-03-21T19:13:40+00:00"
+    },
+    "asset_2b0cb7b35e09": {
+        "id": "asset_2b0cb7b35e09",
+        "name": "guide telechargement.md",
+        "ext": "md",
+        "size": 44065,
+        "storedAs": "data/assets/files/asset_2b0cb7b35e09_guide_telechargement.md",
+        "createdAt": "2026-03-21T19:25:47+00:00"
+    },
+    "asset_4e4c91ce2205": {
+        "id": "asset_4e4c91ce2205",
+        "name": "guide telechargement.md",
+        "ext": "md",
+        "size": 44065,
+        "storedAs": "data/assets/files/asset_4e4c91ce2205_guide_telechargement.md",
+        "createdAt": "2026-03-21T19:41:45+00:00"
     }
 }

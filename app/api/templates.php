@@ -42,6 +42,7 @@ $item = [
     "stock" => (bool)($body["stock"] ?? false),
     "mainTypPath" => (string)($body["mainTypPath"] ?? "typeset/typst/layout/Garamond-brsnoba5-layout.typ"),
     "variables" => is_array($body["variables"] ?? null) ? $body["variables"] : [],
+    "layoutUi" => is_array($body["layoutUi"] ?? null) ? $body["layoutUi"] : [],
     "createdAt" => gmdate("c"),
 ];
 
