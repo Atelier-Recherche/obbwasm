@@ -91,26 +91,19 @@
     set heading(numbering: conf.heading-numbering)
   }
 
+  show footnote.entry: it => block(breakable: false, it)
+
   show heading.where(level: 1): it => {
     run-section-title.update(it.body)
-    let block-body = block(below: 0.8em, {
-      v(conf.section-title-pad-top)
-      align(center, {
-        set text(size: 1.35em)
-        it
-      })
-    })
     if conf.section-new-page {
-      page(
-        width: conf.page-width,
-        height: conf.page-height,
-        margin: _page-margins(conf),
-        header: none,
-        footer: none,
-      )[#block-body]
-    } else {
-      block(spacing: 0pt, block-body)
+      pagebreak(to: "odd", weak: true)
     }
+    v(conf.section-title-pad-top)
+    align(center, {
+      set text(size: 1.35em)
+      it
+    })
+    v(2em)
   }
 
   show heading.where(level: 2): it => {

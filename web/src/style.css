@@ -54,6 +54,43 @@ body {
   flex-wrap: wrap;
 }
 
+.checks {
+  align-items: center;
+}
+
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toggle-chip .toggle-knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--input-border);
+  background: var(--surface);
+}
+
+.toggle-chip.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.toggle-chip.on .toggle-knob {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .toolbar,
 .tabs,
 .panel {

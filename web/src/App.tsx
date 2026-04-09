@@ -21,6 +21,9 @@ type ImpositionMode =
   | "perfect-bound"
   | "n-up"
   | "cut-stack";
+type ImpositionStrategy = "mode" | "template";
+
+type TabId = "contenu" | "couverture" | "imposition" | "pdf";
 
 const apiBase = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8088/api";
 
@@ -68,6 +71,148 @@ function parseMm(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function overrideTypstLet(source: string, key: string, valueExpr: string): string {
+  const rx = new RegExp(`#let\\s+${key}\\s*=\\s*.*`, "g");
+  if (rx.test(source)) {
+    return source.replace(rx, `#let ${key} = ${valueExpr}`);
+  }
+  return `#let ${key} = ${valueExpr}\n${source}`;
+}
+
+function firstDiagnosticMessage(compiled: unknown): string {
+  const list = (compiled as { diagnostics?: Array<{ message?: string }> } | null)?.diagnostics ?? [];
+  if (!Array.isArray(list) || list.length === 0) return "";
+  const msg = list[0]?.message;
+  return typeof msg === "string" ? msg : "";
+}
+
+type ImpositionTemplateSpec = {
+  packetSize: number;
+  kind: "signature" | "spread";
+};
+
+function parseImpositionTemplateSpec(path: string): ImpositionTemplateSpec | null {
+  const m = path.match(/(\d+)(signature|spread)\.typ$/i);
+  if (!m) return null;
+  const packetSize = Number(m[1]);
+  const kind = m[2].toLowerCase() as "signature" | "spread";
+  if (!Number.isFinite(packetSize) || packetSize <= 0) return null;
+  return { packetSize, kind };
+}
+
+function reorderSpreadSequence(pages: number[]): number[] {
+  const out: number[] = [];
+  let i = 0;
+  let j = pages.length - 1;
+  while (i <= j) {
+    out.push(pages[i]);
+    if (i !== j) out.push(pages[j]);
+    i += 1;
+    j -= 1;
+  }
+  return out;
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function buildImpositionMainTyp(
+  kind: "signature" | "spread",
+  packetSize: number,
+  packets: number[][],
+  compensationMm: number,
+): string {
+  if (packetSize % 4 !== 0 || packetSize <= 0) {
+    throw new Error(`Template ${packetSize}${kind} non supporte (taille de paquet multiple de 4 requise).`);
+  }
+  const lines: string[] = [
+    `#let source-pdf = "export.pdf"`,
+    `#let compensation = ${compensationMm}mm`,
+    `#set page(width: 297mm, height: 210mm, margin: 0mm)`,
+    `#let render-page(page-num, width: 143.5mm) = {`,
+    `  if page-num <= 0 {`,
+    `    box(width: width, height: 210mm)[]`,
+    `  } else {`,
+    `    image(source-pdf, page: page-num, width: width)`,
+    `  }`,
+    `}`,
+    `#let pair(left-page, right-page) = [`,
+    `  #place(left + top, render-page(left-page))`,
+    `  #place(left + top, dx: 143.5mm + compensation, dy: 0mm, render-page(right-page))`,
+    `]`,
+    `#let side(left-page, right-page, left-align: true) = {`,
+    `  if left-align [`,
+    `    #place(left + top, render-page(left-page, width: 148mm))`,
+    `    #place(left + top, dx: 148mm, dy: 0mm, render-page(right-page, width: 148mm))`,
+    `  ] else [`,
+    `    #place(right + top, dx: -296mm, dy: 0mm, render-page(left-page, width: 148mm))`,
+    `    #place(right + top, dx: -148mm, dy: 0mm, render-page(right-page, width: 148mm))`,
+    `  ]`,
+    `}`,
+  ];
+
+  const pageAt = (arr: number[], idx: number): number => arr[idx] ?? 0;
+
+  packets.forEach((pack, idx) => {
+    if (kind === "spread") {
+      // Mode spread: pour chaque bloc de 4 pages du paquet, ordre template:
+      // (2,1) puis (3,4), repete.
+      for (let base = 0; base < packetSize; base += 4) {
+        const p1 = pageAt(pack, base + 0);
+        const p2 = pageAt(pack, base + 1);
+        const p3 = pageAt(pack, base + 2);
+        const p4 = pageAt(pack, base + 3);
+        lines.push(`#pair(${p2}, ${p1})`);
+        lines.push(`#pagebreak()`);
+        lines.push(`#pair(${p3}, ${p4})`);
+        if (base + 4 < packetSize) lines.push(`#pagebreak()`);
+      }
+    } else {
+      // Mode signature: imposition "booklet" sur le paquet entier.
+      // Feuille i: face A = (fin, debut), face B = (debut+1, fin-1)
+      // puis progression vers le centre.
+      const sheets = packetSize / 4;
+      for (let s = 0; s < sheets; s += 1) {
+        const frontLeft = pageAt(pack, packetSize - 1 - 2 * s);
+        const frontRight = pageAt(pack, 2 * s);
+        const backLeft = pageAt(pack, 2 * s + 1);
+        const backRight = pageAt(pack, packetSize - 2 - 2 * s);
+        lines.push(`#side(${frontLeft}, ${frontRight}, left-align: true)`);
+        lines.push(`#pagebreak()`);
+        lines.push(`#side(${backLeft}, ${backRight}, left-align: false)`);
+        if (s + 1 < sheets) lines.push(`#pagebreak()`);
+      }
+    }
+    if (idx !== packets.length - 1) lines.push(`#pagebreak()`);
+  });
+  return lines.join("\n");
+}
+
+function ToggleChip({
+  enabled,
+  onToggle,
+  label,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`toggle-chip ${enabled ? "on" : "off"}`}
+      aria-pressed={enabled}
+      onClick={onToggle}
+    >
+      <span className="toggle-knob" aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
 async function loadPdfPageCount(file: File): Promise<number> {
   const buf = await file.arrayBuffer();
   const pdf = await getDocument({ data: buf }).promise;
@@ -92,9 +237,12 @@ export default function App() {
   const typstWasmImporterReady = useRef(false);
   const compilerRef = useRef<TypstCompiler | null>(null);
   const [wasmReady, setWasmReady] = useState(false);
-  const [tab, setTab] = useState<"contenu" | "couverture" | "impression" | "pdf">("contenu");
+  const [tab, setTab] = useState<TabId>("contenu");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [selectedCoverTemplatePath, setSelectedCoverTemplatePath] = useState("typeset/typst/cover/Garamond-brsnoba5-cover-A3.typ");
+  const [selectedImpositionTemplatePath, setSelectedImpositionTemplatePath] = useState("typeset/typst/impose/brsnoba5-A4-4spread.typ");
+  const [impositionStrategy, setImpositionStrategy] = useState<ImpositionStrategy>("template");
   const [sourceText, setSourceText] = useState("");
   const [sourceFileBlob, setSourceFileBlob] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState("");
@@ -102,12 +250,15 @@ export default function App() {
   const [includeCoverPage, setIncludeCoverPage] = useState(false);
   const [tocPosition, setTocPosition] = useState<"none" | "start" | "end">("none");
   const [sectionBreakH1H2, setSectionBreakH1H2] = useState(false);
+  const [sectionTitleRectoBlankBefore, setSectionTitleRectoBlankBefore] = useState(false);
+  const [frontTitleRectoBlankBefore, setFrontTitleRectoBlankBefore] = useState(false);
   const [title, setTitle] = useState("Titre");
   const [author, setAuthor] = useState("Auteur");
   const [publisher, setPublisher] = useState("Edition");
   const [grammage, setGrammage] = useState(80);
   const [innerPages, setInnerPages] = useState(0);
   const [impositionMode, setImpositionMode] = useState<ImpositionMode>("saddle-stitch");
+  const [impositionPaperThicknessMm, setImpositionPaperThicknessMm] = useState(0.1);
   const [sheetFormat, setSheetFormat] = useState<"A4" | "A3">("A4");
   const [signatureSize, setSignatureSize] = useState(16);
   const [nUp, setNUp] = useState(2);
@@ -115,6 +266,10 @@ export default function App() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [generatedPdfName, setGeneratedPdfName] = useState("");
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState("");
+  const [coverPdfName, setCoverPdfName] = useState("");
+  const [impositionPreviewUrl, setImpositionPreviewUrl] = useState("");
+  const [impositionPdfName, setImpositionPdfName] = useState("");
   const [status, setStatus] = useState("Pret.");
   const [generatedTypst, setGeneratedTypst] = useState("");
   const [renderLog, setRenderLog] = useState("");
@@ -130,6 +285,33 @@ export default function App() {
     () => templates.find((t) => t.id === selectedTemplate),
     [templates, selectedTemplate],
   );
+
+  const coverTemplateChoices = useMemo(() => {
+    const layoutPath = selectedTemplateObj?.mainTypPath ?? "";
+    if (layoutPath.includes("Garamond-brsnoba5-layout.typ")) {
+      return [{ id: "typeset/typst/cover/Garamond-brsnoba5-cover-A3.typ", name: "Garamond brsnoba5 - Cover A3" }];
+    }
+    return [{ id: "typeset/typst/cover/Garamond-brsnoba5-cover-A3.typ", name: "Garamond brsnoba5 - Cover A3" }];
+  }, [selectedTemplateObj?.mainTypPath]);
+
+  const impositionTemplateChoices = useMemo(() => {
+    return [
+      { id: "typeset/typst/impose/brsnoba5-A4-4spread.typ", name: "brsnoba5 A4 - 4spread" },
+      { id: "typeset/typst/impose/brsnoba5-A4-4signature.typ", name: "brsnoba5 A4 - 4signature" },
+    ];
+  }, []);
+
+  useEffect(() => {
+    if (!coverTemplateChoices.some((x) => x.id === selectedCoverTemplatePath)) {
+      setSelectedCoverTemplatePath(coverTemplateChoices[0]?.id ?? "");
+    }
+  }, [coverTemplateChoices, selectedCoverTemplatePath]);
+
+  useEffect(() => {
+    if (!impositionTemplateChoices.some((x) => x.id === selectedImpositionTemplatePath)) {
+      setSelectedImpositionTemplatePath(impositionTemplateChoices[0]?.id ?? "");
+    }
+  }, [impositionTemplateChoices, selectedImpositionTemplatePath]);
 
   useEffect(() => {
     const saved = localStorage.getItem("obbwasm-theme");
@@ -175,6 +357,10 @@ export default function App() {
     const upLandscape = Math.floor(sheet[0] / h) * Math.floor(sheet[1] / w);
     return Math.max(upPortrait, upLandscape);
   }, [bookFormat, sheetFormat]);
+
+  useEffect(() => {
+    setImpositionPaperThicknessMm(paperThickness);
+  }, [paperThickness]);
 
   function pushLog(message: string) {
     const ts = new Date().toISOString();
@@ -231,6 +417,21 @@ export default function App() {
     pushLog(`PDF pret: ${file.name}, ${file.size} bytes, ${count} pages.`);
   }
 
+  function setPreviewFromBytes(bytes: Uint8Array, target: "content" | "cover" | "imposition", fileName: string) {
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    if (target === "content") {
+      setPreviewUrl(url);
+      setGeneratedPdfName(fileName);
+    } else if (target === "cover") {
+      setCoverPreviewUrl(url);
+      setCoverPdfName(fileName);
+    } else {
+      setImpositionPreviewUrl(url);
+      setImpositionPdfName(fileName);
+    }
+  }
+
   function downloadGeneratedPdf() {
     if (!pdfFile || !previewUrl) {
       setStatus("Aucun PDF genere a telecharger.");
@@ -252,6 +453,8 @@ export default function App() {
           includeCoverPage,
           tocPosition,
           sectionBreakH1H2,
+          sectionTitleRectoBlankBefore,
+          frontTitleRectoBlankBefore,
           bookFormat,
           templateVars: selectedTemplateObj?.variables ?? {},
           bibliography: true,
@@ -265,7 +468,9 @@ export default function App() {
           spineThicknessMm: spineThickness,
         },
         moduleC: {
+          impositionStrategy,
           impositionMode,
+          impositionPaperThicknessMm,
           sheetFormat,
           signatureSize,
           nUp,
@@ -410,6 +615,8 @@ export default function App() {
           `    edition: ${JSON.stringify(publisher)},`,
           `    cover-page: ${includeCoverPage ? "true" : "false"},`,
           `    section-new-page: ${sectionBreakH1H2 ? "true" : "false"},`,
+          `    section-title-recto-with-blank-before: ${sectionTitleRectoBlankBefore ? "true" : "false"},`,
+          `    front-title-recto-with-blank-before: ${frontTitleRectoBlankBefore ? "true" : "false"},`,
           `    toc-at-start: ${tocPosition === "start" ? "true" : "false"},`,
           `    toc-at-end: ${tocPosition === "end" ? "true" : "false"},`,
           `  )`,
@@ -450,6 +657,117 @@ export default function App() {
     }
   }
 
+  async function compileCoverTypstToPdfWasm() {
+    setStatus("Compilation couverture Typst WASM -> PDF...");
+    try {
+      const path = selectedCoverTemplatePath;
+      if (!path) {
+        setStatus("Aucun template couverture selectionne.");
+        return;
+      }
+      const tplRes = await fetch(`${apiBase}/template-source.php?path=${encodeURIComponent(path)}`);
+      const tplData = await tplRes.json();
+      if (!tplData.ok || !tplData.source) {
+        setStatus(`Template couverture non charge: ${tplData.error ?? "inconnu"}`);
+        return;
+      }
+
+      const compiler = await ensureWasmCompiler();
+      compiler.reset();
+      compiler.resetShadow();
+      let source = String(tplData.source);
+      source = overrideTypstLet(source, "title", JSON.stringify(title));
+      source = overrideTypstLet(source, "author", JSON.stringify(author));
+      source = overrideTypstLet(source, "edition", JSON.stringify(publisher));
+      source = overrideTypstLet(source, "spine-thickness", `${spineThickness}mm`);
+      compiler.addSource("/main.typ", source);
+      const compiled = await compiler.runWithWorld(
+        { root: "/", mainFilePath: "/main.typ", inputs: { title, author } },
+        async (world) => world.pdf({ diagnostics: "unix" }),
+      );
+      if (!compiled?.result) {
+        setRenderLog(JSON.stringify(compiled?.diagnostics ?? [], null, 2));
+        setStatus("Compilation couverture sans resultat PDF.");
+        return;
+      }
+      const bytes = Uint8Array.from(compiled.result);
+      setPreviewFromBytes(bytes, "cover", "cover-output.pdf");
+      setRenderLog(JSON.stringify(compiled.diagnostics ?? [], null, 2));
+      setStatus("PDF couverture genere.");
+      pushLog(`Cover PDF OK: ${bytes.byteLength} bytes.`);
+    } catch (err) {
+      setStatus(`Erreur couverture Typst WASM: ${(err as Error).message}`);
+      pushLog(`Erreur couverture Typst WASM: ${(err as Error).message}`);
+    }
+  }
+
+  async function compileImpositionTypstToPdfWasm() {
+    setStatus("Compilation imposition Typst WASM -> PDF...");
+    try {
+      if (impositionStrategy !== "template") {
+        setStatus("Generation PDF imposition disponible uniquement en mode template.");
+        return;
+      }
+      const path = selectedImpositionTemplatePath;
+      if (!path) {
+        setStatus("Aucun template imposition selectionne.");
+        return;
+      }
+      const spec = parseImpositionTemplateSpec(path);
+      if (!spec) {
+        setStatus("Nom du template imposition invalide (attendu: ...-4signature.typ ou ...-4spread.typ).");
+        return;
+      }
+      if (!pdfFile) {
+        setStatus("Aucun PDF interieur disponible (genere ou charge).");
+        return;
+      }
+      const totalPages = await loadPdfPageCount(pdfFile);
+      const allPages = Array.from({ length: totalPages }, (_, i) => i + 1);
+      const orderedBase = spec.kind === "spread" ? reorderSpreadSequence(allPages) : allPages;
+      const missing = (spec.packetSize - (orderedBase.length % spec.packetSize)) % spec.packetSize;
+      const ordered = orderedBase.concat(Array.from({ length: missing }, () => 0));
+      const packets = chunkArray(ordered, spec.packetSize);
+      pushLog(`Imposition: ${spec.kind}, paquet=${spec.packetSize}, pages=${totalPages}, padding=${missing}, paquets=${packets.length}`);
+
+      const compiler = await ensureWasmCompiler();
+      compiler.reset();
+      compiler.resetShadow();
+      const pdfBytes = new Uint8Array(await pdfFile.arrayBuffer());
+      compiler.mapShadow("/export.pdf", pdfBytes);
+      compiler.mapShadow("export.pdf", pdfBytes);
+      const compensationMm = Number((-11 * impositionPaperThicknessMm).toFixed(2));
+      const mainSource = buildImpositionMainTyp(spec.kind, spec.packetSize, packets, compensationMm);
+      compiler.addSource("/main.typ", mainSource);
+      const compiled = await compiler.runWithWorld(
+        { root: "/", mainFilePath: "/main.typ", inputs: {} },
+        async (world) => world.pdf({ diagnostics: "unix" }),
+      );
+      if (!compiled?.result) {
+        setRenderLog(
+          [
+            "=== diagnostics ===",
+            JSON.stringify(compiled?.diagnostics ?? [], null, 2),
+            "",
+            "=== main.typ (generated) ===",
+            mainSource,
+          ].join("\n"),
+        );
+        const firstDiag = firstDiagnosticMessage(compiled);
+        setStatus(firstDiag ? `Compilation imposition echouee: ${firstDiag}` : "Compilation imposition sans resultat PDF.");
+        return;
+      }
+      const bytes = Uint8Array.from(compiled.result);
+      setPreviewFromBytes(bytes, "imposition", "imposition-output.pdf");
+      setRenderLog(JSON.stringify(compiled.diagnostics ?? [], null, 2));
+      setStatus("PDF imposition genere.");
+      pushLog(`Imposition PDF OK: ${bytes.byteLength} bytes.`);
+    } catch (err) {
+      setStatus(`Erreur imposition Typst WASM: ${(err as Error).message}`);
+      pushLog(`Erreur imposition Typst WASM: ${(err as Error).message}`);
+    }
+  }
+
   async function exportPrintPack() {
     const zip = new JSZip();
     const manifest = {
@@ -460,12 +778,14 @@ export default function App() {
         includeCoverPage,
         tocPosition,
         sectionBreakH1H2,
+        sectionTitleRectoBlankBefore,
+        frontTitleRectoBlankBefore,
         bookFormat,
         templateVars: selectedTemplateObj?.variables ?? {},
         imageRefs,
       },
       moduleB: { title, author, publisher, grammage, innerPages, spineThicknessMm: spineThickness },
-      moduleC: { impositionMode, sheetFormat, signatureSize, nUp, creepMm: creep, poses, missingPages },
+      moduleC: { impositionStrategy, impositionMode, impositionPaperThicknessMm, sheetFormat, signatureSize, nUp, creepMm: creep, poses, missingPages },
     };
     zip.file("manifest.json", JSON.stringify(manifest, null, 2));
     zip.file("README.txt", "Pack impression V1: manifest + contenus references.");
@@ -543,7 +863,7 @@ export default function App() {
       <nav className="tabs">
         <button className={tab === "contenu" ? "active" : ""} onClick={() => setTab("contenu")}>Contenu</button>
         <button className={tab === "couverture" ? "active" : ""} onClick={() => setTab("couverture")}>Couverture</button>
-        <button className={tab === "impression" ? "active" : ""} onClick={() => setTab("impression")}>Impression</button>
+        <button className={tab === "imposition" ? "active" : ""} onClick={() => setTab("imposition")}>Imposition</button>
         <button className={tab === "pdf" ? "active" : ""} onClick={() => setTab("pdf")}>PDF genere</button>
       </nav>
 
@@ -572,10 +892,12 @@ export default function App() {
             </label>
           </div>
           <div className="checks">
-            <label><input type="checkbox" checked={includeCoverPage} onChange={(e) => setIncludeCoverPage(e.target.checked)} /> Cover page interne</label>
-            <label><input type="checkbox" checked={sectionBreakH1H2} onChange={(e) => setSectionBreakH1H2(e.target.checked)} /> Forcer H1/H2 nouvelle page</label>
-            <label>
-              TOC
+            <ToggleChip enabled={includeCoverPage} onToggle={() => setIncludeCoverPage((v) => !v)} label="Cover page interne" />
+            <ToggleChip enabled={sectionBreakH1H2} onToggle={() => setSectionBreakH1H2((v) => !v)} label="Forcer H1 nouvelle page" />
+            <ToggleChip enabled={sectionTitleRectoBlankBefore} onToggle={() => setSectionTitleRectoBlankBefore((v) => !v)} label="H1 a droite + page vierge avant" />
+            <ToggleChip enabled={frontTitleRectoBlankBefore} onToggle={() => setFrontTitleRectoBlankBefore((v) => !v)} label="Page de titre a droite + page vierge avant" />
+            <label className="inline-field">
+              <span>TOC</span>
               <select value={tocPosition} onChange={(e) => setTocPosition(e.target.value as "none" | "start" | "end")}>
                 <option value="none">Aucun</option>
                 <option value="start">Debut</option>
@@ -607,46 +929,95 @@ export default function App() {
             </label>
             <label>Pages interieures<input type="number" value={innerPages} onChange={(e) => setInnerPages(Number(e.target.value))} /></label>
             <label>Tranche calculee (mm)<input readOnly value={spineThickness} /></label>
+            <label>
+              Template couverture
+              <select value={selectedCoverTemplatePath} onChange={(e) => setSelectedCoverTemplatePath(e.target.value)}>
+                {coverTemplateChoices.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </label>
           </div>
           <p>Formule: (NbPages / 2) x EpaisseurFeuille = {spineThickness} mm</p>
-          <label>PDF interieur pour comptage + preview<input type="file" accept="application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfFile(e.target.files[0])} /></label>
-          {previewUrl && <iframe className="preview" src={previewUrl} title="preview" />}
+          <div className="checks">
+            <label>PDF interieur pour comptage<input type="file" accept="application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfFile(e.target.files[0])} /></label>
+            <button onClick={compileCoverTypstToPdfWasm}>Generer PDF couverture</button>
+            {coverPreviewUrl && <a href={coverPreviewUrl} download={coverPdfName || "cover-output.pdf"}>Telecharger {coverPdfName || "cover-output.pdf"}</a>}
+          </div>
+          {coverPreviewUrl && <iframe className="preview" src={coverPreviewUrl} title="preview-cover" />}
         </section>
       )}
 
-      {tab === "impression" && (
+      {tab === "imposition" && (
         <section className="panel">
           <h2>Module C - Imposition</h2>
           <div className="grid">
             <label>
-              Mode
-              <select value={impositionMode} onChange={(e) => setImpositionMode(e.target.value as ImpositionMode)}>
-                <option value="saddle-stitch">Cahier unique (Saddle Stitch)</option>
-                <option value="section-sewing">Multi-signatures (Section Sewing)</option>
-                <option value="perfect-bound">Perfect Bound</option>
-                <option value="n-up">N-Up</option>
-                <option value="cut-stack">Cut &amp; Stack</option>
+              Methode
+              <select value={impositionStrategy} onChange={(e) => setImpositionStrategy(e.target.value as ImpositionStrategy)}>
+                <option value="mode">Mode automatique</option>
+                <option value="template">Template manuel</option>
               </select>
             </label>
-            <label>
-              Feuille impression
-              <select value={sheetFormat} onChange={(e) => setSheetFormat(e.target.value as "A4" | "A3")}>
-                <option value="A4">A4</option>
-                <option value="A3">A3</option>
-              </select>
-            </label>
-            <label>Taille signature<input type="number" value={signatureSize} onChange={(e) => setSignatureSize(Number(e.target.value))} /></label>
-            <label>N-Up<input type="number" value={nUp} onChange={(e) => setNUp(Number(e.target.value))} /></label>
-            <label>Creep par feuille (mm)<input type="number" step="0.01" value={creepPerLeaf} onChange={(e) => setCreepPerLeaf(Number(e.target.value))} /></label>
+            {impositionStrategy === "mode" && (
+              <label>
+                Mode
+                <select value={impositionMode} onChange={(e) => setImpositionMode(e.target.value as ImpositionMode)}>
+                  <option value="saddle-stitch">Cahier unique (Saddle Stitch)</option>
+                  <option value="section-sewing">Multi-signatures (Section Sewing)</option>
+                  <option value="perfect-bound">Perfect Bound</option>
+                  <option value="n-up">N-Up</option>
+                  <option value="cut-stack">Cut &amp; Stack</option>
+                </select>
+              </label>
+            )}
+            {impositionStrategy === "mode" && (
+              <label>
+                Feuille impression
+                <select value={sheetFormat} onChange={(e) => setSheetFormat(e.target.value as "A4" | "A3")}>
+                  <option value="A4">A4</option>
+                  <option value="A3">A3</option>
+                </select>
+              </label>
+            )}
+            {impositionStrategy === "mode" && <label>Taille signature<input type="number" value={signatureSize} onChange={(e) => setSignatureSize(Number(e.target.value))} /></label>}
+            {impositionStrategy === "mode" && <label>N-Up<input type="number" value={nUp} onChange={(e) => setNUp(Number(e.target.value))} /></label>}
+            {impositionStrategy === "mode" && <label>Creep par feuille (mm)<input type="number" step="0.01" value={creepPerLeaf} onChange={(e) => setCreepPerLeaf(Number(e.target.value))} /></label>}
+            {impositionStrategy === "template" && (
+              <label>
+                Template imposition
+                <select value={selectedImpositionTemplatePath} onChange={(e) => setSelectedImpositionTemplatePath(e.target.value)}>
+                  {impositionTemplateChoices.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {impositionStrategy === "template" && (
+              <label>
+                Epaisseur papier (mm/feuille)
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={impositionPaperThicknessMm}
+                  onChange={(e) => setImpositionPaperThicknessMm(Number(e.target.value))}
+                />
+              </label>
+            )}
           </div>
           <div className="info">
-            <p>Poses possibles sur {sheetFormat}: {poses}</p>
-            <p>Chasse estimee: {creep} mm</p>
-            <p>Pages a ajouter pour respecter le multiple: {missingPages}</p>
-            <button onClick={computeImpositionServerSide}>Verifier imposition cote serveur</button>
-            {poses < 1 && <p className="warn">Le format livre ne rentre pas dans la feuille choisie.</p>}
-            {missingPages > 0 && <p className="warn">Proposer {missingPages} pages blanches (notes/garde).</p>}
+            {impositionStrategy === "mode" && <p>Poses possibles sur {sheetFormat}: {poses}</p>}
+            {impositionStrategy === "mode" && <p>Chasse estimee: {creep} mm</p>}
+            {impositionStrategy === "mode" && <p>Pages a ajouter pour respecter le multiple: {missingPages}</p>}
+            {impositionStrategy === "mode" && <button onClick={computeImpositionServerSide}>Verifier imposition cote serveur</button>}
+            {impositionStrategy === "template" && <button onClick={compileImpositionTypstToPdfWasm}>Generer PDF imposition</button>}
+            {impositionPreviewUrl && <a href={impositionPreviewUrl} download={impositionPdfName || "imposition-output.pdf"}>Telecharger {impositionPdfName || "imposition-output.pdf"}</a>}
+            {impositionStrategy === "mode" && <p>Mode automatique: calcul uniquement (pas de generation PDF template).</p>}
+            {impositionStrategy === "mode" && poses < 1 && <p className="warn">Le format livre ne rentre pas dans la feuille choisie.</p>}
+            {impositionStrategy === "mode" && missingPages > 0 && <p className="warn">Proposer {missingPages} pages blanches (notes/garde).</p>}
           </div>
+          {impositionPreviewUrl && <iframe className="preview" src={impositionPreviewUrl} title="preview-imposition" />}
         </section>
       )}
 
