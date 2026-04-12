@@ -6,7 +6,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "GET") {
     json_response(["ok" => false, "error" => "Methode non supportee"], 405);
 }
 
-$root = dirname(__DIR__, 2);
+$root = project_typeset_root();
 $fontsRoot = $root . DIRECTORY_SEPARATOR . "typeset" . DIRECTORY_SEPARATOR . "typst" . DIRECTORY_SEPARATOR . "fonts";
 $action = (string)($_GET["action"] ?? "list");
 

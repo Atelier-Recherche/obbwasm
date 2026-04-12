@@ -11,9 +11,13 @@ if ($path === "") {
     json_response(["ok" => false, "error" => "Parametre path manquant"], 400);
 }
 
-$root = dirname(__DIR__, 2);
-$full = realpath($root . DIRECTORY_SEPARATOR . str_replace(["/", "\\"], DIRECTORY_SEPARATOR, $path));
-if ($full === false || !str_starts_with($full, $root)) {
+$root = project_typeset_root();
+$rootReal = realpath($root);
+if ($rootReal === false) {
+    json_response(["ok" => false, "error" => "Racine projet introuvable"], 500);
+}
+$full = realpath($rootReal . DIRECTORY_SEPARATOR . str_replace(["/", "\\"], DIRECTORY_SEPARATOR, $path));
+if ($full === false || !str_starts_with($full, $rootReal)) {
     json_response(["ok" => false, "error" => "Chemin template invalide"], 400);
 }
 if (!is_file($full)) {

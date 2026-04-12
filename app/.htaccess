@@ -1,0 +1,14 @@
+# Racine applicative (api/, data/, public/) : sert le front depuis public/ sans boucle de rewrite.
+# (Options retire : certains hebergeurs interdisent Options dans .htaccess -> 500)
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # API PHP
+    RewriteRule ^api/(.*)$ api/$1 [L]
+
+    # Front statique : ne pas re-ecrire si l'URL est deja sous /public/ (evite public/public/ et boucles)
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>

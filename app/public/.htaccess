@@ -1,0 +1,5 @@
+# Types MIME pour modules ES (.mjs) et WebAssembly — requis pour pdf.js et bundles Vite.
+<IfModule mod_mime.c>
+    AddType application/javascript .mjs
+    AddType application/wasm .wasm
+</IfModule>

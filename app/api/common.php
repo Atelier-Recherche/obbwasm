@@ -37,6 +37,26 @@ function read_json_body(): array {
     return $data;
 }
 
+/**
+ * Racine du depot contenant le dossier typeset/ :
+ * - en dev : parent de app/ (typeset a cote de app/)
+ * - en prod (FTP plat) : meme niveau que api/ et public/ (typeset a cote de api/)
+ */
+function project_typeset_root(): string {
+    $apiDir = __DIR__;
+    $parent = dirname($apiDir, 1);
+    $grandparent = dirname($apiDir, 2);
+    $sep = DIRECTORY_SEPARATOR;
+    $t = "typeset";
+    if (is_dir($grandparent . $sep . $t)) {
+        return $grandparent;
+    }
+    if (is_dir($parent . $sep . $t)) {
+        return $parent;
+    }
+    return $grandparent;
+}
+
 function data_path(string $segment): string {
     return dirname(__DIR__) . DIRECTORY_SEPARATOR . "data" . DIRECTORY_SEPARATOR . $segment;
 }

@@ -1,107 +1,17 @@
 <!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>OBBWASM - Test UI</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 20px; max-width: 900px; }
-    h1 { margin-bottom: 4px; }
-    .muted { color: #555; margin-top: 0; }
-    .row { display: flex; gap: 12px; margin: 8px 0; flex-wrap: wrap; }
-    input, select, button, textarea { padding: 8px; }
-    textarea { width: 100%; min-height: 120px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 16px 0; }
-    pre { background: #f7f7f7; padding: 12px; border-radius: 8px; overflow: auto; }
-  </style>
-</head>
-<body>
-  <h1>OBBWASM - Interface de test</h1>
-  <p class="muted">Backend PHP JSON, pour continuer le projet sans SQL en V1.</p>
-
-  <div class="card">
-    <h2>Templates</h2>
-    <div class="row">
-      <button id="loadTemplates">Charger</button>
-      <input id="forkSourceId" placeholder="sourceId (ex: tpl_stock_garamond_b5)" size="36" />
-      <input id="forkName" placeholder="Nom du fork" size="24" />
-      <button id="forkTemplate">Fork template</button>
-    </div>
-    <pre id="templatesOut"></pre>
-  </div>
-
-  <div class="card">
-    <h2>Projet</h2>
-    <div class="row">
-      <input id="projectName" placeholder="Nom projet" />
-      <input id="projectTemplateId" placeholder="templateId" size="32" />
-      <button id="saveProject">Créer projet</button>
-      <button id="loadProjects">Lister projets</button>
-    </div>
-    <pre id="projectsOut"></pre>
-  </div>
-
-  <div class="card">
-    <h2>Asset Upload</h2>
-    <div class="row">
-      <input id="fileInput" type="file" />
-      <button id="uploadBtn">Uploader</button>
-    </div>
-    <pre id="uploadOut"></pre>
-  </div>
-
-  <script>
-    const apiBase = "../api";
-
-    async function apiGet(path) {
-      const r = await fetch(`${apiBase}/${path}`);
-      return r.json();
-    }
-
-    async function apiPost(path, payload) {
-      const r = await fetch(`${apiBase}/${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      return r.json();
-    }
-
-    function out(id, data) {
-      document.getElementById(id).textContent = JSON.stringify(data, null, 2);
-    }
-
-    document.getElementById("loadTemplates").onclick = async () => {
-      out("templatesOut", await apiGet("templates.php"));
-    };
-
-    document.getElementById("forkTemplate").onclick = async () => {
-      const sourceId = document.getElementById("forkSourceId").value.trim();
-      const name = document.getElementById("forkName").value.trim() || "Mon fork";
-      out("templatesOut", await apiPost("templates.php", { action: "fork", sourceId, name, owner: "user-demo" }));
-    };
-
-    document.getElementById("saveProject").onclick = async () => {
-      const name = document.getElementById("projectName").value.trim() || "Projet demo";
-      const templateId = document.getElementById("projectTemplateId").value.trim();
-      out("projectsOut", await apiPost("projects.php", { name, templateId, settings: { format: "A5" } }));
-    };
-
-    document.getElementById("loadProjects").onclick = async () => {
-      out("projectsOut", await apiGet("projects.php"));
-    };
-
-    document.getElementById("uploadBtn").onclick = async () => {
-      const file = document.getElementById("fileInput").files[0];
-      if (!file) {
-        out("uploadOut", { ok: false, error: "Aucun fichier" });
-        return;
-      }
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`${apiBase}/upload.php`, { method: "POST", body: fd });
-      out("uploadOut", await res.json());
-    };
-  </script>
-</body>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>web</title>
+    <script type="module" crossorigin src="/assets/index-DmXEc5fW.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/chunk-DseTPa7n.js">
+    <link rel="modulepreload" crossorigin href="/assets/preload-helper-DSXbuxSR.js">
+    <link rel="modulepreload" crossorigin href="/assets/typst_ts_web_compiler-Qvs4J00q.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-DqslYPY7.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
 </html>

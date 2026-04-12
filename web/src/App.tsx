@@ -418,7 +418,7 @@ export default function App() {
   }
 
   function setPreviewFromBytes(bytes: Uint8Array, target: "content" | "cover" | "imposition", fileName: string) {
-    const blob = new Blob([bytes], { type: "application/pdf" });
+    const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     if (target === "content") {
       setPreviewUrl(url);

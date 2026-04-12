@@ -1,0 +1,178 @@
+% title: Gabarits pour livre format A4 avec police Garamond
+% description: Modèle de mise en page pour un livre format A4 (210mm x 297mm) utilisant la police Garamond Premier Pro
+% version: 1.0
+
+\documentclass[a4paper,11pt]{memoir}
+\usepackage{fontspec}
+\usepackage[provide=*,french]{babel}
+\usepackage{microtype}
+\usepackage{graphicx} 
+\usepackage{hyperref} 
+\usepackage{url}
+\usepackage[paperwidth=210mm, paperheight=297mm, margin=25mm, bottom=30mm, top=30mm, head=14pt,headsep=10pt, foot=14pt, footskip=20pt]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\setmainfont{Garamond Premier Pro}[
+    Path = /usr/local/share/fonts/custom/,
+    Extension = .otf,
+    UprightFont = GaramondPremrPro,
+    BoldFont = GaramondPremrPro-Bd,
+    ItalicFont = GaramondPremrPro-It,
+    BoldItalicFont = GaramondPremrPro-BdIt
+]
+
+\newcommand{\headerfont}{\normalfont}
+\newcommand{\titrefont}{\normalfont}
+
+
+\usepackage{xcolor}
+% \usepackage{pagecolor} % Change the color to your desired shade of gray
+% \pagecolor{lightgray}  % Change the color to your desired shade of gray
+
+\urlstyle{same}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=black,
+    citecolor=black,
+    anchorcolor=black,
+    pdfborder={0 0 0}
+}
+
+\setsecheadstyle{\titrefont\large\centering}
+\setsecnumdepth{none}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancyhead[LE]{\headerfont\rightmark}
+\fancyhead[RO]{\headerfont\leftmark}
+\fancyhead[RE,LO]{\thepage}
+\fancyhead[RE,LO]{\headerfont\fontsize{10}{10}\selectfont\thepage}
+
+
+\titleformat{\section}
+  {\titrefont\large\centering\vspace*{2cm}}
+  {\thesection}
+  {1em}
+  {}
+  []
+
+
+\renewcommand{\sectionmark}[1]{\markboth{#1}{#1}}
+
+\graphicspath{{./}{../images/}{../../images/}} 
+\DeclareGraphicsExtensions{.pdf,.png,.jpg,.jpeg}
+\setkeys{Gin}{width=\linewidth, keepaspectratio}
+
+\usepackage{float}
+\floatstyle{plain}
+\newfloat{inlinefigure}{H}{lof}
+\floatname{inlinefigure}{Figure}
+
+\let\oldincludegraphics\includegraphics
+\renewcommand{\includegraphics}[2][]{%
+  \begin{inlinefigure}
+    \centering
+    \IfFileExists{#2}{%
+      \oldincludegraphics[#1]{#2}%
+    }{%
+      \fbox{\parbox{0.8\linewidth}{\centering Image non trouvée : #2}}%
+    }%
+  \end{inlinefigure}%
+}
+
+\usepackage{titlesec}
+
+% Style for \subsection
+\titleformat{\subsection}
+  {\titrefont\normalsize\bfseries} % Font style
+  {\thesubsection} % Section number
+  {1em} % Space between number and title
+  {} % Code before title
+  [] % Code after title
+
+% Style for \subsubsection
+\titleformat{\subsubsection}
+  {\titrefont\normalsize\itshape} % Font style
+  {\thesubsubsection} % Section number
+  {1em} % Space between number and title
+  {} % Code before title
+  [] % Code after title
+
+\usepackage{mdframed}
+
+\newcommand{\pandocbounded}[1]{#1} 
+
+\newmdenv[
+  linewidth=0.5pt,
+  roundcorner=5pt,
+  innerleftmargin=5pt,
+  innerrightmargin=5pt,
+  innertopmargin=5pt,
+  innerbottommargin=5pt
+]{framedparagraph}
+
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{%
+  \begin{framedparagraph}[frametitle={#1}]
+  \end{framedparagraph}%
+}
+
+\newif\ifCoverPage
+\CoverPagefalse
+\newif\ifHalfTitlePage
+\HalfTitlePagefalse 
+\newif\ifTitlePage
+\TitlePagefalse
+\newif\ifTableOfContents
+\TableOfContentsfalse 
+\newif\ifTableOfContentsEnd
+\TableOfContentsEndfalse
+\newif\ifPageNumbers
+\PageNumberstrue
+
+\begin{document}
+
+\ifPageNumbers
+\pagestyle{fancy}
+\else
+\pagestyle{empty}
+\fi
+
+\ifCoverPage
+\newpage
+\fi
+
+\ifHalfTitlePage
+\begin{titlingpage}
+  \thispagestyle{plain}
+  \centering
+  {\Large\titrefont {{titre}}}\\
+\end{titlingpage}
+\fi
+
+\ifTitlePage
+    \begin{titlingpage}
+        \thispagestyle{plain}
+        \centering
+        {\Large\titrefont {{titre}}}\\
+        \includegraphics{images/{{imagecouv}}}
+        {{auteur}}\\
+    \end{titlingpage}
+\fi
+
+\ifTableOfContents
+\tableofcontents
+\fi
+
+\sloppy
+\needspace{3\baselineskip}
+\input{content.tex}
+
+\ifTableOfContentsEnd
+\tableofcontents
+\fi
+\end{document}

@@ -1,0 +1,35 @@
+% title: Imposition BrochSnob5 sur A4 en cahiers de 4 signatures
+% description: Modèle d'imposition pour un livre format B5 imprimé sur A4 en cahiers de 4 pages
+% version: 1.0
+
+\documentclass{article}
+\usepackage{pdfpages}
+\usepackage[margin=0cm, paper=a4paper, landscape]{geometry}
+\usepackage[english]{babel}
+\usepackage{graphicx}
+
+\begin{document}
+% First side
+\begin{figure}[ht!]
+  \raggedright
+  \begin{minipage}[t][143.5mm][t]{148mm}
+    \includegraphics[page=4,angle=0,width=\textwidth,trim=0 0 0 0,clip]{export.pdf}
+  \end{minipage}%
+  \begin{minipage}[t][143.5mm][t]{148mm}
+    \includegraphics[page=1,angle=0,width=\textwidth,trim=0 0 0 0,clip]{export.pdf}
+  \end{minipage}
+\end{figure}
+\newpage
+
+% Second side
+\begin{figure}[ht!]
+  \raggedleft
+  \begin{minipage}[t][143.5mm][t]{148mm}
+    \includegraphics[page=2,angle=0,width=\textwidth,trim=0 0 0 0,clip]{export.pdf}
+  \end{minipage}%
+  \begin{minipage}[t][143.5mm][t]{148mm}
+    \includegraphics[page=3,angle=0,width=\textwidth,trim=0 0 0 0,clip]{export.pdf}
+  \end{minipage}
+\end{figure}
+
+\end{document}
