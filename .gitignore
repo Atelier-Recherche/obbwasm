@@ -1,6 +1,9 @@
 # Données locales / production (jamais dans le dépôt)
 app/data/
 
+# Auth (copier depuis auth-config.sample.php)
+app/api/auth-config.local.php
+
 # Déploiement : secrets FTP / chemins machine (copier depuis un modèle local si besoin)
 deploy.ps1
 deploy.local.ps1

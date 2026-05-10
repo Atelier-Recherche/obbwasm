@@ -1,7 +1,22 @@
 <?php
 declare(strict_types=1);
 
-header("Access-Control-Allow-Origin: *");
+$cfgPath = __DIR__ . DIRECTORY_SEPARATOR . "auth-config.local.php";
+if (!file_exists($cfgPath)) {
+    $cfgPath = __DIR__ . DIRECTORY_SEPARATOR . "auth-config.sample.php";
+}
+$corsCfg = file_exists($cfgPath) ? require $cfgPath : [];
+$allowed = is_array($corsCfg) ? ($corsCfg["allowed_origins"] ?? []) : [];
+if (!is_array($allowed)) {
+    $allowed = [];
+}
+$origin = (string)($_SERVER["HTTP_ORIGIN"] ?? "");
+if ($origin !== "" && in_array($origin, $allowed, true)) {
+    header("Access-Control-Allow-Origin: " . $origin);
+    header("Access-Control-Allow-Credentials: true");
+} else {
+    header("Access-Control-Allow-Origin: *");
+}
 header("Access-Control-Allow-Headers: Content-Type");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 

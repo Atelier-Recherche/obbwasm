@@ -11,13 +11,27 @@ if ($path === "") {
     json_response(["ok" => false, "error" => "Parametre path manquant"], 400);
 }
 
-$root = project_typeset_root();
-$rootReal = realpath($root);
-if ($rootReal === false) {
-    json_response(["ok" => false, "error" => "Racine projet introuvable"], 500);
+$rootReal = false;
+$full = false;
+
+if (str_starts_with($path, "user-templates/")) {
+    $dataRoot = realpath(dirname(__DIR__) . DIRECTORY_SEPARATOR . "data");
+    if ($dataRoot === false) {
+        json_response(["ok" => false, "error" => "Dossier data introuvable"], 500);
+    }
+    $rel = str_replace(["/", "\\"], DIRECTORY_SEPARATOR, $path);
+    $full = realpath($dataRoot . DIRECTORY_SEPARATOR . $rel);
+    $rootReal = $dataRoot;
+} else {
+    $root = project_typeset_root();
+    $rootReal = realpath($root);
+    if ($rootReal === false) {
+        json_response(["ok" => false, "error" => "Racine projet introuvable"], 500);
+    }
+    $full = realpath($rootReal . DIRECTORY_SEPARATOR . str_replace(["/", "\\"], DIRECTORY_SEPARATOR, $path));
 }
-$full = realpath($rootReal . DIRECTORY_SEPARATOR . str_replace(["/", "\\"], DIRECTORY_SEPARATOR, $path));
-if ($full === false || !str_starts_with($full, $rootReal)) {
+
+if ($full === false || $rootReal === false || !str_starts_with($full, $rootReal)) {
     json_response(["ok" => false, "error" => "Chemin template invalide"], 400);
 }
 if (!is_file($full)) {

@@ -21,6 +21,7 @@
     "@myriaddreamin/typst-ts-web-compiler": "^0.7.0-rc2",
     "@myriaddreamin/typst.ts": "^0.7.0-rc2",
     "jszip": "^3.10.1",
+    "lucide-react": "^0.468.0",
     "pandoc-wasm": "^1.0.1",
     "pdfjs-dist": "^5.5.207",
     "react": "^19.2.4",

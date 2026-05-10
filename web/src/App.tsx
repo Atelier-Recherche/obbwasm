@@ -1,5 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
+import {
+  BookOpen,
+  BookMarked,
+  LayoutGrid,
+  FileText,
+  Moon,
+  Sun,
+  Download,
+  Upload,
+  Package,
+  Bug,
+  Loader2,
+  LogIn,
+  LogOut,
+  Shield,
+  Send,
+} from "lucide-react";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { TypstCompiler } from "@myriaddreamin/typst.ts";
@@ -15,17 +32,18 @@ type Template = {
   variables: Record<string, string>;
 };
 
-type ImpositionMode =
-  | "saddle-stitch"
-  | "section-sewing"
-  | "perfect-bound"
-  | "n-up"
-  | "cut-stack";
-type ImpositionStrategy = "mode" | "template";
-
 type TabId = "contenu" | "couverture" | "imposition" | "pdf";
 
 const apiBase = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8088/api";
+
+/** A false : imposition « automatique » (serveur) masquee — remettre true pour reactiver le dev. */
+const IMPOSITION_AUTO_ENABLED = false;
+
+function apiFetch(input: string | URL, init?: RequestInit): Promise<Response> {
+  return fetch(input, { ...init, credentials: "include" });
+}
+
+type AuthUser = { email: string; isAdmin: boolean };
 
 const paperThicknessByWeight: Record<number, number> = {
   80: 0.1,
@@ -242,7 +260,6 @@ export default function App() {
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [selectedCoverTemplatePath, setSelectedCoverTemplatePath] = useState("typeset/typst/cover/Garamond-brsnoba5-cover-A3.typ");
   const [selectedImpositionTemplatePath, setSelectedImpositionTemplatePath] = useState("typeset/typst/impose/brsnoba5-A4-4spread.typ");
-  const [impositionStrategy, setImpositionStrategy] = useState<ImpositionStrategy>("template");
   const [sourceText, setSourceText] = useState("");
   const [sourceFileBlob, setSourceFileBlob] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState("");
@@ -257,12 +274,7 @@ export default function App() {
   const [publisher, setPublisher] = useState("Edition");
   const [grammage, setGrammage] = useState(80);
   const [innerPages, setInnerPages] = useState(0);
-  const [impositionMode, setImpositionMode] = useState<ImpositionMode>("saddle-stitch");
   const [impositionPaperThicknessMm, setImpositionPaperThicknessMm] = useState(0.1);
-  const [sheetFormat, setSheetFormat] = useState<"A4" | "A3">("A4");
-  const [signatureSize, setSignatureSize] = useState(16);
-  const [nUp, setNUp] = useState(2);
-  const [creepPerLeaf, setCreepPerLeaf] = useState(0.08);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [generatedPdfName, setGeneratedPdfName] = useState("");
@@ -278,6 +290,13 @@ export default function App() {
   const [previewImgDataUrl, setPreviewImgDataUrl] = useState("");
   const [bibFile, setBibFile] = useState<File | null>(null);
   const [colorTheme, setColorTheme] = useState<"light" | "dark">("light");
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginMessage, setLoginMessage] = useState("");
+  const [forkName, setForkName] = useState("");
+  const [submissionName, setSubmissionName] = useState("");
+  const [adminSubmissions, setAdminSubmissions] = useState<Array<Record<string, unknown>>>([]);
 
   const imageRefs = useMemo(() => extractMarkdownImages(sourceText), [sourceText]);
   const lintIssues = useMemo(() => findInvisibleChars(sourceText), [sourceText]);
@@ -343,21 +362,6 @@ export default function App() {
     [innerPages, paperThickness],
   );
 
-  const needsMultiple = impositionMode === "section-sewing" ? signatureSize : 4;
-  const missingPages = innerPages > 0 ? (needsMultiple - (innerPages % needsMultiple)) % needsMultiple : 0;
-  const creep = useMemo(
-    () => Number((((innerPages / 2) - 1) * creepPerLeaf).toFixed(2)),
-    [innerPages, creepPerLeaf],
-  );
-
-  const poses = useMemo(() => {
-    const [w, h] = bookFormat.split("x").map(Number);
-    const sheet = sheetFormat === "A4" ? [210, 297] : [297, 420];
-    const upPortrait = Math.floor(sheet[0] / w) * Math.floor(sheet[1] / h);
-    const upLandscape = Math.floor(sheet[0] / h) * Math.floor(sheet[1] / w);
-    return Math.max(upPortrait, upLandscape);
-  }, [bookFormat, sheetFormat]);
-
   useEffect(() => {
     setImpositionPaperThicknessMm(paperThickness);
   }, [paperThickness]);
@@ -368,7 +372,7 @@ export default function App() {
   }
 
   async function fetchTemplates() {
-    const res = await fetch(`${apiBase}/templates.php`);
+    const res = await apiFetch(`${apiBase}/templates.php`);
     const data = await res.json();
     if (data.ok) {
       setTemplates(data.items);
@@ -381,7 +385,7 @@ export default function App() {
   async function uploadSource(file: File) {
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(`${apiBase}/upload.php`, { method: "POST", body: form });
+    const res = await apiFetch(`${apiBase}/upload.php`, { method: "POST", body: form });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error ?? "Upload source impossible");
     return data.item;
@@ -468,20 +472,13 @@ export default function App() {
           spineThicknessMm: spineThickness,
         },
         moduleC: {
-          impositionStrategy,
-          impositionMode,
+          impositionStrategy: "template" as const,
+          selectedImpositionTemplatePath,
           impositionPaperThicknessMm,
-          sheetFormat,
-          signatureSize,
-          nUp,
-          creepPerLeafMm: creepPerLeaf,
-          estimatedTotalCreepMm: creep,
-          poses,
-          missingPages,
         },
       },
     };
-    const res = await fetch(`${apiBase}/projects.php`, {
+    const res = await apiFetch(`${apiBase}/projects.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -503,13 +500,13 @@ export default function App() {
     }
     const typst = await import("@myriaddreamin/typst.ts");
     const compiler = typst.createTypstCompiler();
-    const fontsRes = await fetch(`${apiBase}/font-assets.php?action=list`);
+    const fontsRes = await apiFetch(`${apiBase}/font-assets.php?action=list`);
     const fontsData = await fontsRes.json();
     const fontItems: Array<{ path: string; name: string; size: number }> = fontsData?.ok ? fontsData.items ?? [] : [];
     const fontBuffers: Uint8Array[] = [];
     for (const item of fontItems) {
       try {
-        const res = await fetch(`${apiBase}/font-assets.php?action=file&path=${encodeURIComponent(item.path)}`);
+        const res = await apiFetch(`${apiBase}/font-assets.php?action=file&path=${encodeURIComponent(item.path)}`);
         if (!res.ok) {
           pushLog(`Font skip (${item.name}): HTTP ${res.status}`);
           continue;
@@ -590,7 +587,7 @@ export default function App() {
         return;
       }
       pushLog(`Template compile: ${tpl.mainTypPath}`);
-      const tplRes = await fetch(`${apiBase}/template-source.php?path=${encodeURIComponent(tpl.mainTypPath)}`);
+      const tplRes = await apiFetch(`${apiBase}/template-source.php?path=${encodeURIComponent(tpl.mainTypPath)}`);
       const tplData = await tplRes.json();
       if (!tplData.ok || !tplData.source) {
         setStatus(`Template non charge: ${tplData.error ?? "inconnu"}`);
@@ -665,7 +662,7 @@ export default function App() {
         setStatus("Aucun template couverture selectionne.");
         return;
       }
-      const tplRes = await fetch(`${apiBase}/template-source.php?path=${encodeURIComponent(path)}`);
+      const tplRes = await apiFetch(`${apiBase}/template-source.php?path=${encodeURIComponent(path)}`);
       const tplData = await tplRes.json();
       if (!tplData.ok || !tplData.source) {
         setStatus(`Template couverture non charge: ${tplData.error ?? "inconnu"}`);
@@ -704,10 +701,6 @@ export default function App() {
   async function compileImpositionTypstToPdfWasm() {
     setStatus("Compilation imposition Typst WASM -> PDF...");
     try {
-      if (impositionStrategy !== "template") {
-        setStatus("Generation PDF imposition disponible uniquement en mode template.");
-        return;
-      }
       const path = selectedImpositionTemplatePath;
       if (!path) {
         setStatus("Aucun template imposition selectionne.");
@@ -785,7 +778,11 @@ export default function App() {
         imageRefs,
       },
       moduleB: { title, author, publisher, grammage, innerPages, spineThicknessMm: spineThickness },
-      moduleC: { impositionStrategy, impositionMode, impositionPaperThicknessMm, sheetFormat, signatureSize, nUp, creepMm: creep, poses, missingPages },
+      moduleC: {
+        impositionStrategy: "template" as const,
+        selectedImpositionTemplatePath,
+        impositionPaperThicknessMm,
+      },
     };
     zip.file("manifest.json", JSON.stringify(manifest, null, 2));
     zip.file("README.txt", "Pack impression V1: manifest + contenus references.");
@@ -801,37 +798,230 @@ export default function App() {
     setStatus("Pack impression exporte.");
   }
 
-  async function computeImpositionServerSide() {
-    const res = await fetch(`${apiBase}/imposition-calc.php`, {
+  async function refreshAuth() {
+    try {
+      const res = await apiFetch(`${apiBase}/auth.php?action=me`);
+      const data = await res.json();
+      if (data.ok && data.authenticated && data.user) {
+        setAuthUser({ email: data.user.email, isAdmin: !!data.user.isAdmin });
+      } else {
+        setAuthUser(null);
+      }
+    } catch {
+      setAuthUser(null);
+    } finally {
+      setAuthChecked(true);
+    }
+  }
+
+  async function requestMagicLink() {
+    setLoginMessage("");
+    try {
+      const res = await apiFetch(`${apiBase}/auth.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "request-link", email: loginEmail.trim() }),
+      });
+      const data = (await res.json()) as {
+        message?: string;
+        error?: string;
+        mailDelivered?: boolean;
+        debugLogPath?: string;
+      };
+      setLoginMessage(data.message ?? data.error ?? "Reponse inattendue.");
+      if (typeof data.mailDelivered === "boolean") {
+        console.info("[auth] mailDelivered=", data.mailDelivered, "serverLog=", data.debugLogPath ?? "");
+      }
+      if (data.mailDelivered === false) {
+        console.warn(
+          "[auth] Echec envoi mail cote serveur. Details dans le fichier journal PHP :",
+          data.debugLogPath ?? "(voir app/data/logs/obbwasm-mail.log)",
+        );
+        setLoginMessage(
+          (data.message ?? "") +
+            " — L'envoi a echoue : voir le journal sur le serveur (F12 > Console pour le chemin).",
+        );
+      }
+    } catch (e) {
+      setLoginMessage(`Erreur: ${(e as Error).message}`);
+    }
+  }
+
+  async function logout() {
+    await apiFetch(`${apiBase}/auth.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "logout" }),
+    });
+    setAuthUser(null);
+  }
+
+  async function forkSelectedTemplate() {
+    if (!selectedTemplate) {
+      setStatus("Selectionnez un template a dupliquer.");
+      return;
+    }
+    const res = await apiFetch(`${apiBase}/templates.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        innerPages,
-        signatureSize,
-        mode: impositionMode,
-        creepPerLeafMm: creepPerLeaf,
+        action: "fork",
+        sourceId: selectedTemplate,
+        name: forkName.trim() || undefined,
       }),
     });
     const data = await res.json();
-    if (!data.ok) {
-      setStatus(`Erreur calcul imposition: ${data.error ?? "inconnue"}`);
+    if (data.ok) {
+      await fetchTemplates();
+      setSelectedTemplate(data.item.id);
+      setStatus(`Template duplique: ${data.item.name}`);
+    } else {
+      setStatus(`Fork: ${data.error ?? "erreur"}`);
+    }
+  }
+
+  async function exportSelectedThemeZip() {
+    if (!selectedTemplate) return;
+    const res = await apiFetch(`${apiBase}/theme-export.php?templateId=${encodeURIComponent(selectedTemplate)}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setStatus(`Export: ${(err as { error?: string }).error ?? res.statusText}`);
       return;
     }
-    setStatus(
-      `Calcul serveur: multiple ${data.needsMultiple}, pages manquantes ${data.missingPages}, chasse ${data.creepTotalMm} mm`,
-    );
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `theme-${selectedTemplate}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setStatus("Theme exporte (ZIP).");
   }
+
+  async function importThemeFromFile(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("name", submissionName.trim() || file.name.replace(/\.zip$/i, ""));
+    const res = await apiFetch(`${apiBase}/theme-import.php`, { method: "POST", body: form });
+    const data = await res.json();
+    if (data.ok) {
+      await fetchTemplates();
+      setSelectedTemplate(data.item.id);
+      setStatus(`Theme importe: ${data.item.name}`);
+    } else {
+      setStatus(`Import theme: ${data.error ?? "erreur"}`);
+    }
+  }
+
+  async function submitThemeForReview(file: File) {
+    const form = new FormData();
+    form.append("action", "submit");
+    form.append("name", submissionName.trim() || "Soumission");
+    form.append("file", file);
+    const res = await apiFetch(`${apiBase}/theme-submissions.php`, { method: "POST", body: form });
+    const data = await res.json();
+    if (data.ok) {
+      setStatus(`Soumission enregistree (${data.item.id}).`);
+    } else {
+      setStatus(`Soumission: ${data.error ?? "erreur"}`);
+    }
+  }
+
+  async function loadAdminSubmissions() {
+    const res = await apiFetch(`${apiBase}/theme-submissions.php?action=list`);
+    const data = await res.json();
+    if (data.ok) {
+      setAdminSubmissions(data.items ?? []);
+    }
+  }
+
+  async function approveSubmission(id: string) {
+    const res = await apiFetch(`${apiBase}/theme-submissions.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "approve", id }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      await fetchTemplates();
+      await loadAdminSubmissions();
+      setStatus(`Theme approuve: ${data.template?.name ?? id}`);
+    } else {
+      setStatus(`Approbation: ${data.error ?? "erreur"}`);
+    }
+  }
+
+  async function rejectSubmission(id: string) {
+    const res = await apiFetch(`${apiBase}/theme-submissions.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reject", id, note: "" }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      await loadAdminSubmissions();
+      setStatus("Soumission refusee.");
+    } else {
+      setStatus(`Refus: ${data.error ?? "erreur"}`);
+    }
+  }
+
+  useEffect(() => {
+    void refreshAuth();
+    const q = new URLSearchParams(window.location.search).get("auth");
+    if (q === "ok") {
+      setStatus("Connexion reussie.");
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (q === "invalid" || q === "error") {
+      setStatus("Lien de connexion invalide ou expire.");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   return (
     <div className="app">
-      <header>
-        <h1>OBBWASM Studio</h1>
-        <p className="sub">Modules A/B/C + preview PDF + stockage JSON via PHP (styles portes par template)</p>
+      <header className="app-header">
+        <div className="app-header-main">
+          <h1>OBBWASM Studio</h1>
+          <p className="sub">Modules A/B/C + preview PDF + stockage JSON via PHP (styles portes par template)</p>
+        </div>
+        <div className="app-header-auth">
+          {!authChecked ? (
+            <span className="auth-status">
+              <Loader2 className="icon-spin" aria-hidden size={18} /> Session…
+            </span>
+          ) : authUser ? (
+            <>
+              <span className="auth-email" title={authUser.email}>
+                {authUser.isAdmin && <Shield size={16} className="icon-inline" aria-hidden />}
+                {authUser.email}
+              </span>
+              <button type="button" className="btn-ghost" onClick={() => void logout()}>
+                <LogOut size={16} aria-hidden /> Deconnexion
+              </button>
+            </>
+          ) : (
+            <div className="auth-login-inline">
+              <input
+                type="email"
+                placeholder="email@exemple.fr"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                autoComplete="email"
+              />
+              <button type="button" className="btn-primary" onClick={() => void requestMagicLink()}>
+                <LogIn size={16} aria-hidden /> Lien magique
+              </button>
+              {loginMessage && <span className="login-hint">{loginMessage}</span>}
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="toolbar">
-        <button onClick={fetchTemplates}>Charger templates</button>
-        <select value={selectedTemplate} onChange={(e) => setSelectedTemplate(e.target.value)}>
+        <button type="button" onClick={() => void fetchTemplates()}>
+          <Upload size={16} aria-hidden /> Charger templates
+        </button>
+        <select value={selectedTemplate} onChange={(e) => setSelectedTemplate(e.target.value)} aria-label="Template">
           <option value="">Selectionner un template</option>
           {templates.map((t) => (
             <option key={t.id} value={t.id}>
@@ -839,17 +1029,98 @@ export default function App() {
             </option>
           ))}
         </select>
-        <button onClick={saveProject}>Enregistrer projet</button>
-        <button onClick={convertWithPandocWasm}>Pandoc WASM {"->"} Typst</button>
-        <button onClick={compileTypstToPdfWasm}>Typst WASM {"->"} PDF</button>
-        <button onClick={downloadGeneratedPdf}>Telecharger PDF genere</button>
-        <button onClick={exportPrintPack}>Generer pack impression</button>
-        <button onClick={() => setShowDebug((v) => !v)}>{showDebug ? "Masquer debug" : "Afficher debug"}</button>
-        <button type="button" onClick={toggleColorTheme} title="Basculer theme clair / sombre">
-          Theme: {colorTheme === "dark" ? "sombre" : "clair"}
+        {authUser && (
+          <>
+            <input
+              className="fork-name-input"
+              placeholder="Nom du fork (optionnel)"
+              value={forkName}
+              onChange={(e) => setForkName(e.target.value)}
+            />
+            <button type="button" onClick={() => void forkSelectedTemplate()}>
+              Dupliquer template
+            </button>
+            <button type="button" onClick={() => void exportSelectedThemeZip()}>
+              <Download size={16} aria-hidden /> Export ZIP theme
+            </button>
+            <label className="btn-file">
+              <Upload size={16} aria-hidden /> Import ZIP
+              <input
+                type="file"
+                accept=".zip,application/zip"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void importThemeFromFile(f);
+                }}
+              />
+            </label>
+            <input
+              className="fork-name-input"
+              placeholder="Nom soumission / import"
+              value={submissionName}
+              onChange={(e) => setSubmissionName(e.target.value)}
+            />
+            <label className="btn-file">
+              <Send size={16} aria-hidden /> Soumettre theme
+              <input
+                type="file"
+                accept=".zip,application/zip"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void submitThemeForReview(f);
+                }}
+              />
+            </label>
+          </>
+        )}
+        <button type="button" onClick={() => void saveProject()}>Enregistrer projet</button>
+        <button type="button" onClick={() => void convertWithPandocWasm()}>Pandoc WASM {"->"} Typst</button>
+        <button type="button" onClick={() => void compileTypstToPdfWasm()}>Typst WASM {"->"} PDF</button>
+        <button type="button" onClick={downloadGeneratedPdf}>
+          <Download size={16} aria-hidden /> PDF genere
         </button>
-        <span>WASM: {wasmReady ? "pret" : "non initialise"}</span>
+        <button type="button" onClick={() => void exportPrintPack()}>
+          <Package size={16} aria-hidden /> Pack impression
+        </button>
+        <button type="button" onClick={() => setShowDebug((v) => !v)}>
+          <Bug size={16} aria-hidden /> {showDebug ? "Masquer debug" : "Debug"}
+        </button>
+        <button type="button" className="btn-theme-toggle" onClick={toggleColorTheme} title="Theme clair / sombre">
+          {colorTheme === "dark" ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
+          <span className="sr-only">Basculer theme</span>
+        </button>
+        <span className="wasm-badge">WASM: {wasmReady ? "pret" : "off"}</span>
       </div>
+
+      {authUser?.isAdmin && (
+        <section className="panel admin-panel">
+          <h2>
+            <Shield size={20} aria-hidden /> Moderation themes
+          </h2>
+          <button type="button" onClick={() => void loadAdminSubmissions()}>
+            Rafraichir la file
+          </button>
+          <ul className="admin-list">
+            {adminSubmissions.map((s) => (
+              <li key={String(s.id)}>
+                <span className="admin-meta">
+                  {(s.name as string) ?? s.id} — {(s.status as string) ?? "?"} — {(s.submitterEmail as string) ?? ""}
+                </span>
+                {s.status === "pending" && (
+                  <span className="admin-actions">
+                    <button type="button" onClick={() => void approveSubmission(String(s.id))}>Approuver</button>
+                    <button type="button" onClick={() => void rejectSubmission(String(s.id))}>Refuser</button>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {showDebug && (
         <section className="panel">
@@ -860,11 +1131,19 @@ export default function App() {
         </section>
       )}
 
-      <nav className="tabs">
-        <button className={tab === "contenu" ? "active" : ""} onClick={() => setTab("contenu")}>Contenu</button>
-        <button className={tab === "couverture" ? "active" : ""} onClick={() => setTab("couverture")}>Couverture</button>
-        <button className={tab === "imposition" ? "active" : ""} onClick={() => setTab("imposition")}>Imposition</button>
-        <button className={tab === "pdf" ? "active" : ""} onClick={() => setTab("pdf")}>PDF genere</button>
+      <nav className="tabs" role="tablist" aria-label="Modules">
+        <button type="button" role="tab" aria-selected={tab === "contenu"} className={tab === "contenu" ? "active" : ""} onClick={() => setTab("contenu")}>
+          <BookOpen size={18} aria-hidden /> Contenu
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "couverture"} className={tab === "couverture" ? "active" : ""} onClick={() => setTab("couverture")}>
+          <BookMarked size={18} aria-hidden /> Couverture
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "imposition"} className={tab === "imposition" ? "active" : ""} onClick={() => setTab("imposition")}>
+          <LayoutGrid size={18} aria-hidden /> Imposition
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "pdf"} className={tab === "pdf" ? "active" : ""} onClick={() => setTab("pdf")}>
+          <FileText size={18} aria-hidden /> PDF genere
+        </button>
       </nav>
 
       {tab === "contenu" && (
@@ -951,71 +1230,40 @@ export default function App() {
       {tab === "imposition" && (
         <section className="panel">
           <h2>Module C - Imposition</h2>
+          {!IMPOSITION_AUTO_ENABLED && (
+            <p className="muted-banner">
+              L&apos;imposition automatique (calcul serveur) est desactivee pour le moment. Seule la generation PDF via template Typst est disponible.
+            </p>
+          )}
           <div className="grid">
             <label>
-              Methode
-              <select value={impositionStrategy} onChange={(e) => setImpositionStrategy(e.target.value as ImpositionStrategy)}>
-                <option value="mode">Mode automatique</option>
-                <option value="template">Template manuel</option>
+              Template imposition
+              <select value={selectedImpositionTemplatePath} onChange={(e) => setSelectedImpositionTemplatePath(e.target.value)}>
+                {impositionTemplateChoices.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
               </select>
             </label>
-            {impositionStrategy === "mode" && (
-              <label>
-                Mode
-                <select value={impositionMode} onChange={(e) => setImpositionMode(e.target.value as ImpositionMode)}>
-                  <option value="saddle-stitch">Cahier unique (Saddle Stitch)</option>
-                  <option value="section-sewing">Multi-signatures (Section Sewing)</option>
-                  <option value="perfect-bound">Perfect Bound</option>
-                  <option value="n-up">N-Up</option>
-                  <option value="cut-stack">Cut &amp; Stack</option>
-                </select>
-              </label>
-            )}
-            {impositionStrategy === "mode" && (
-              <label>
-                Feuille impression
-                <select value={sheetFormat} onChange={(e) => setSheetFormat(e.target.value as "A4" | "A3")}>
-                  <option value="A4">A4</option>
-                  <option value="A3">A3</option>
-                </select>
-              </label>
-            )}
-            {impositionStrategy === "mode" && <label>Taille signature<input type="number" value={signatureSize} onChange={(e) => setSignatureSize(Number(e.target.value))} /></label>}
-            {impositionStrategy === "mode" && <label>N-Up<input type="number" value={nUp} onChange={(e) => setNUp(Number(e.target.value))} /></label>}
-            {impositionStrategy === "mode" && <label>Creep par feuille (mm)<input type="number" step="0.01" value={creepPerLeaf} onChange={(e) => setCreepPerLeaf(Number(e.target.value))} /></label>}
-            {impositionStrategy === "template" && (
-              <label>
-                Template imposition
-                <select value={selectedImpositionTemplatePath} onChange={(e) => setSelectedImpositionTemplatePath(e.target.value)}>
-                  {impositionTemplateChoices.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {impositionStrategy === "template" && (
-              <label>
-                Epaisseur papier (mm/feuille)
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={impositionPaperThicknessMm}
-                  onChange={(e) => setImpositionPaperThicknessMm(Number(e.target.value))}
-                />
-              </label>
-            )}
+            <label>
+              Epaisseur papier (mm/feuille)
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={impositionPaperThicknessMm}
+                onChange={(e) => setImpositionPaperThicknessMm(Number(e.target.value))}
+              />
+            </label>
           </div>
           <div className="info">
-            {impositionStrategy === "mode" && <p>Poses possibles sur {sheetFormat}: {poses}</p>}
-            {impositionStrategy === "mode" && <p>Chasse estimee: {creep} mm</p>}
-            {impositionStrategy === "mode" && <p>Pages a ajouter pour respecter le multiple: {missingPages}</p>}
-            {impositionStrategy === "mode" && <button onClick={computeImpositionServerSide}>Verifier imposition cote serveur</button>}
-            {impositionStrategy === "template" && <button onClick={compileImpositionTypstToPdfWasm}>Generer PDF imposition</button>}
-            {impositionPreviewUrl && <a href={impositionPreviewUrl} download={impositionPdfName || "imposition-output.pdf"}>Telecharger {impositionPdfName || "imposition-output.pdf"}</a>}
-            {impositionStrategy === "mode" && <p>Mode automatique: calcul uniquement (pas de generation PDF template).</p>}
-            {impositionStrategy === "mode" && poses < 1 && <p className="warn">Le format livre ne rentre pas dans la feuille choisie.</p>}
-            {impositionStrategy === "mode" && missingPages > 0 && <p className="warn">Proposer {missingPages} pages blanches (notes/garde).</p>}
+            <button type="button" className="btn-primary" onClick={() => void compileImpositionTypstToPdfWasm()}>
+              Generer PDF imposition
+            </button>
+            {impositionPreviewUrl && (
+              <a href={impositionPreviewUrl} download={impositionPdfName || "imposition-output.pdf"}>
+                Telecharger {impositionPdfName || "imposition-output.pdf"}
+              </a>
+            )}
           </div>
           {impositionPreviewUrl && <iframe className="preview" src={impositionPreviewUrl} title="preview-imposition" />}
         </section>
