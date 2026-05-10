@@ -1,0 +1,177 @@
+{
+    "ui": {
+        "brand": "ObbWasm",
+        "tabContent": "Contenu",
+        "tabCover": "Couverture",
+        "tabImposition": "Imposition",
+        "tabPdf": "PDF",
+        "themeLight": "Clair",
+        "themeDark": "Sombre",
+        "language": "Langue de l’interface",
+        "documentLanguage": "Langue du document",
+        "login": "Connexion",
+        "logout": "Déconnexion",
+        "saveProject": "Enregistrer le projet",
+        "templatesLoading": "Chargement des gabarits…",
+        "statusReady": "Prêt.",
+        "tooltipMdToTypst": "Conversion Pandoc WASM vers Typst (document intermédiaire). Formats source : md, docx, html, odt, epub, latex, rtf, txt… La bibliographie .bib est prise en charge si chargée.",
+        "tooltipCompilePdf": "Compilation Typst WASM vers PDF (mise en page du gabarit sélectionné + contenu Typst).",
+        "mdToTypst": "Md → Typst",
+        "pdf": "PDF",
+        "download": "Télécharger",
+        "pack": "Pack",
+        "optionalNormalize": "Étape optionnelle — normaliser en Markdown",
+        "normalizeHint": "Utile pour homogénéiser epub / docx / pdf / etc. avant le flux Typst.",
+        "toMarkdown": "Vers Markdown",
+        "editPresets": "Éditer les préréglages JSON",
+        "hide": "Masquer",
+        "savePresets": "Enregistrer les préréglages",
+        "templateEdit": "Édition gabarit (.typ)",
+        "templateEditHint": "Seules les copies sous user-templates/ sont enregistrables. Utilisez Dupliquer ou Import ZIP.",
+        "loadSource": "Charger source",
+        "loading": "Chargement…",
+        "saveServer": "Enregistrer sur le serveur",
+        "title": "Titre",
+        "author": "Auteur",
+        "publisher": "Maison d’édition",
+        "sourceFormat": "Format source",
+        "sourceFile": "Source manuscrit",
+        "bibFile": "Bibliographie (.bib)",
+        "imagesDetected": "Images détectées",
+        "coverInternal": "Couverture interne",
+        "editor": "Éditeur",
+        "grammage": "Grammage",
+        "innerPages": "Pages intérieures",
+        "spineCalc": "Tranche calculée (mm)",
+        "coverTemplate": "Template couverture",
+        "coverFormula": "Formule : (NbPages / 2) × Épaisseur feuille",
+        "pdfInteriorCount": "PDF intérieur pour comptage",
+        "generateCoverPdf": "Générer PDF couverture",
+        "impositionDisabled": "L’imposition automatique (calcul serveur) est désactivée pour le moment. Seule la génération PDF via template Typst est disponible.",
+        "pdfInterior": "PDF intérieur (généré dans Contenu ou fichier externe)",
+        "pagesHint": "pages",
+        "noPdfHint": "Aucun PDF : générez-en dans Contenu ou chargez un fichier.",
+        "impositionTemplate": "Template imposition",
+        "paperThicknessMm": "Épaisseur papier (mm/feuille)",
+        "generateImpositionPdf": "Générer PDF imposition",
+        "downloadPair": "Télécharger",
+        "pdfTabEmpty": "Aucun PDF généré pour le moment. Compilez depuis l’onglet Contenu ou chargez un PDF depuis Couverture / Imposition.",
+        "modalTemplatePreview": "Aperçu gabarit",
+        "templateNotFound": "Gabarit introuvable.",
+        "format": "Format",
+        "version": "Version",
+        "file": "Fichier",
+        "variablesJson": "Variables (JSON template)",
+        "close": "Fermer",
+        "bookOptions": "Options de mise en page",
+        "bookOptionsNone": "Ce gabarit n’expose aucune option de mise en page dans l’interface.",
+        "sectionOrder": "Ordre des sections",
+        "sectionOrderHint": "Glisser-déposer pour réordonner (sections activées uniquement).",
+        "customLabels": "Libellés du document (optionnel)",
+        "stringsPlaceholder": "Laisser vide pour la langue du document",
+        "downloadInterior": "Télécharger le PDF intérieur",
+        "optionSections": {
+            "structure": "Structure et sommaire",
+            "headersPages": "En-têtes, pieds et pagination",
+            "typography": "Typographie",
+            "content": "Images, notes et légendes",
+            "backMatter": "Annexes et fin de livre"
+        }
+    },
+    "options": {
+        "chapterTitleInHeader": { "label": "Affichage du titre de chapitre en en-tête" },
+        "pageNumberPlacement": {
+            "label": "Position des numéros de page",
+            "values": { "spread": "Gauche–droite", "center": "Centre", "outer": "Extérieur (recto-verso)" }
+        },
+        "headerFooterRule": {
+            "label": "Ligne de séparation (en-tête / pied)",
+            "values": { "none": "Aucune", "thin": "Filet fin", "thick": "Filet épais" }
+        },
+        "pageNumberStyle": {
+            "label": "Numérotation — style",
+            "values": { "arabic": "Chiffres arabes", "roman": "Romains", "page-n-of-m": "Page X sur Y" }
+        },
+        "autoHeadingNumbering": { "label": "Numérotation automatique des titres" },
+        "h1Typography": {
+            "label": "Style du titre de chapitre (H1)",
+            "values": { "uppercase": "Majuscules", "normal": "Casse normale", "centered": "Centré", "left": "Aligné à gauche" }
+        },
+        "dropCapFirstPara": { "label": "Lettrine au premier paragraphe" },
+        "lineSpacingPreset": {
+            "label": "Interlignage",
+            "values": { "standard": "Standard", "narrow": "Étroit", "wide": "Large" }
+        },
+        "chapterStartOdd": { "label": "Forcer le début de chapitre sur page impaire" },
+        "bindingGutterMm": {
+            "label": "Gouttière de reliure",
+            "values": { "0": "0 mm", "5": "5 mm", "10": "10 mm" }
+        },
+        "transitionBlankStyle": {
+            "label": "Pages blanches de transition",
+            "values": { "empty": "Totalement vierges", "with-running-headers": "Avec en-tête et pied de page" }
+        },
+        "captionPosition": {
+            "label": "Position des légendes",
+            "values": { "above": "Au-dessus", "below": "En-dessous" }
+        },
+        "footnoteScope": {
+            "label": "Notes de bas de page",
+            "values": { "document": "Continues sur tout le document", "chapter": "Recommencer à chaque chapitre" }
+        },
+        "imageTreatment": {
+            "label": "Traitement des images",
+            "values": { "full-width": "Pleine largeur", "float": "Flottante", "auto-margins": "Marges automatiques" }
+        },
+        "accentColor": { "label": "Couleur d’accentuation (hex)" },
+        "showIndex": { "label": "Index alphabétique" },
+        "listFiguresStyle": {
+            "label": "Liste des figures / tableaux",
+            "values": { "none": "Aucune", "after-toc": "Après la TOC", "end": "Fin de document" }
+        },
+        "showGlossary": { "label": "Glossaire" },
+        "coverPage": { "label": "Page de couverture interne" },
+        "halfTitlePage": { "label": "Page de faux-titre" },
+        "titlePage": { "label": "Page de titre / crédits" },
+        "frontTitleRectoBlankBefore": { "label": "Page de titre — recto + page vierge avant" },
+        "sectionNewPage": { "label": "Saut de page automatique sur chaque H1" },
+        "sectionTitleRectoBlankBefore": { "label": "Chapitres (H1) — recto + page vierge avant" },
+        "tocPosition": {
+            "label": "Table des matières (TOC)",
+            "values": { "none": "Aucune", "start": "Début du document", "end": "Fin du document" }
+        },
+        "tocDepth": {
+            "label": "Niveaux dans la TOC",
+            "values": { "1": "H1 uniquement", "2": "H1 + H2", "3": "H1 + H2 + H3" }
+        },
+        "bibliographyPosition": {
+            "label": "Bibliographie",
+            "values": { "none": "Aucune", "start": "Début du document", "end": "Fin du document" }
+        },
+        "widowsOrphans": {
+            "label": "Veuves et orphelines",
+            "values": { "on": "Activé", "off": "Désactivé" }
+        },
+        "showAnnexes": { "label": "Inclure la section Annexes" },
+        "showBackCover": { "label": "Quatrième de couverture" }
+    },
+    "doc": {
+        "labelToc": "Table des matières",
+        "labelBibliography": "Bibliographie",
+        "labelIndex": "Index",
+        "labelGlossary": "Glossaire",
+        "labelListFigures": "Table des figures",
+        "labelAnnexes": "Annexes"
+    },
+    "sections": {
+        "cover": "Couverture",
+        "titleCredits": "Page de titre / Crédits",
+        "toc": "Sommaire (TOC)",
+        "body": "Corps du texte",
+        "annexes": "Annexes",
+        "listFigures": "Liste des figures",
+        "bibliography": "Bibliographie",
+        "indexGlossary": "Index / Glossaire",
+        "backCover": "Quatrième de couverture"
+    }
+}

@@ -1,0 +1,177 @@
+{
+  "ui": {
+    "brand": "ObbWasm",
+    "tabContent": "Inhalt",
+    "tabCover": "Umschlag",
+    "tabImposition": "Imposition",
+    "tabPdf": "PDF",
+    "themeLight": "Hell",
+    "themeDark": "Dunkel",
+    "language": "Oberflächensprache",
+    "documentLanguage": "Dokumentsprache",
+    "login": "Anmelden",
+    "logout": "Abmelden",
+    "saveProject": "Projekt speichern",
+    "templatesLoading": "Vorlagen werden geladen…",
+    "statusReady": "Bereit.",
+    "tooltipMdToTypst": "Pandoc-WASM-zu-Typst-Konvertierung. Quellformate: md, docx, html, odt, epub, latex, rtf, txt… Bibliographie .bib wird genutzt, wenn vorhanden.",
+    "tooltipCompilePdf": "Typst-WASM-zu-PDF-Kompilierung (gewählte Vorlage + Typst-Inhalt).",
+    "mdToTypst": "Md → Typst",
+    "pdf": "PDF",
+    "download": "Herunterladen",
+    "pack": "Paket",
+    "optionalNormalize": "Optional — zu Markdown normalisieren",
+    "normalizeHint": "Nützlich, um epub / docx / pdf / etc. vor Typst zu vereinheitlichen.",
+    "toMarkdown": "Zu Markdown",
+    "editPresets": "JSON-Voreinstellungen bearbeiten",
+    "hide": "Ausblenden",
+    "savePresets": "Voreinstellungen speichern",
+    "templateEdit": "Vorlage bearbeiten (.typ)",
+    "templateEditHint": "Nur Kopien unter user-templates/ können gespeichert werden. Duplizieren oder ZIP-Import.",
+    "loadSource": "Quelle laden",
+    "loading": "Laden…",
+    "saveServer": "Auf Server speichern",
+    "title": "Titel",
+    "author": "Autor",
+    "publisher": "Verlag",
+    "sourceFormat": "Quellformat",
+    "sourceFile": "Manuskriptdatei",
+    "bibFile": "Bibliographie (.bib)",
+    "imagesDetected": "Erkannte Bilder",
+    "coverInternal": "Innere Umschlagseite",
+    "editor": "Verlag",
+    "grammage": "Grammatur",
+    "innerPages": "Innenseiten",
+    "spineCalc": "Rücken (mm)",
+    "coverTemplate": "Umschlagvorlage",
+    "coverFormula": "Formel: (Seiten / 2) × Papierdicke",
+    "pdfInteriorCount": "Innen-PDF für Seitenzahl",
+    "generateCoverPdf": "Umschlag-PDF erzeugen",
+    "impositionDisabled": "Automatische Imposition (Server) ist deaktiviert. Nur Typst-PDF-Generierung verfügbar.",
+    "pdfInterior": "Innen-PDF (aus Inhalt oder externe Datei)",
+    "pagesHint": "Seiten",
+    "noPdfHint": "Kein PDF: in Inhalt erzeugen oder Datei laden.",
+    "impositionTemplate": "Impositionsvorlage",
+    "paperThicknessMm": "Papierdicke (mm/Blatt)",
+    "generateImpositionPdf": "Impositions-PDF erzeugen",
+    "downloadPair": "Herunterladen",
+    "pdfTabEmpty": "Noch kein PDF. Kompilieren Sie im Inhalt oder laden Sie ein PDF.",
+    "modalTemplatePreview": "Vorlagen-Vorschau",
+    "templateNotFound": "Vorlage nicht gefunden.",
+    "format": "Format",
+    "version": "Version",
+    "file": "Datei",
+    "variablesJson": "Variablen (JSON-Vorlage)",
+    "close": "Schließen",
+    "bookOptions": "Layout-Optionen",
+    "bookOptionsNone": "Diese Vorlage legt keine Layout-Optionen in der Oberfläche offen.",
+    "sectionOrder": "Abschnittsreihenfolge",
+    "sectionOrderHint": "Ziehen zum Sortieren (nur aktive Abschnitte).",
+    "customLabels": "Dokumentbeschriftungen (optional)",
+    "stringsPlaceholder": "Leer lassen für Standardsprache des Dokuments",
+    "downloadInterior": "Innen-PDF herunterladen",
+    "optionSections": {
+      "structure": "Struktur und Inhaltsverzeichnis",
+      "headersPages": "Kopf-/Fußzeilen und Seiten",
+      "typography": "Typografie",
+      "content": "Bilder, Fußnoten und Bildunterschriften",
+      "backMatter": "Anhang und Schluss"
+    }
+  },
+  "options": {
+    "chapterTitleInHeader": { "label": "Kapiteltitel in der Kopfzeile" },
+    "pageNumberPlacement": {
+      "label": "Seitenzahlenposition",
+      "values": { "spread": "Links–rechts", "center": "Mitte", "outer": "Außen (Spread)" }
+    },
+    "headerFooterRule": {
+      "label": "Trennlinie (Kopf/Fuß)",
+      "values": { "none": "Keine", "thin": "Dünn", "thick": "Dick" }
+    },
+    "pageNumberStyle": {
+      "label": "Seitennummerierung",
+      "values": { "arabic": "Arabisch", "roman": "Römisch", "page-n-of-m": "Seite X von Y" }
+    },
+    "autoHeadingNumbering": { "label": "Automatische Überschriftennummerierung" },
+    "h1Typography": {
+      "label": "Stil Kapitelüberschrift (H1)",
+      "values": { "uppercase": "Großbuchstaben", "normal": "Normale Schreibung", "centered": "Zentriert", "left": "Linksbündig" }
+    },
+    "dropCapFirstPara": { "label": "Initialbuchstabe im ersten Absatz" },
+    "lineSpacingPreset": {
+      "label": "Zeilenabstand",
+      "values": { "standard": "Standard", "narrow": "Eng", "wide": "Weit" }
+    },
+    "chapterStartOdd": { "label": "Kapitelanfang auf ungerader Seite erzwingen" },
+    "bindingGutterMm": {
+      "label": "Bundsteg",
+      "values": { "0": "0 mm", "5": "5 mm", "10": "10 mm" }
+    },
+    "transitionBlankStyle": {
+      "label": "Übergangs-Leerseiten",
+      "values": { "empty": "Völlig leer", "with-running-headers": "Mit Kopf- und Fußzeile" }
+    },
+    "captionPosition": {
+      "label": "Bildunterschrift",
+      "values": { "above": "Darüber", "below": "Darunter" }
+    },
+    "footnoteScope": {
+      "label": "Fußnoten",
+      "values": { "document": "Durchgehend", "chapter": "Pro Kapitel neu" }
+    },
+    "imageTreatment": {
+      "label": "Bildbehandlung",
+      "values": { "full-width": "Volle Breite", "float": "Umfließend", "auto-margins": "Automatische Ränder" }
+    },
+    "accentColor": { "label": "Akzentfarbe (hex)" },
+    "showIndex": { "label": "Alphabetisches Register" },
+    "listFiguresStyle": {
+      "label": "Abbildungsverzeichnis",
+      "values": { "none": "Keins", "after-toc": "Nach Inhaltsverzeichnis", "end": "Am Dokumentende" }
+    },
+    "showGlossary": { "label": "Glossar" },
+    "coverPage": { "label": "Innere Umschlagseite" },
+    "halfTitlePage": { "label": "Schmutztitel" },
+    "titlePage": { "label": "Titelseite / Impressum" },
+    "frontTitleRectoBlankBefore": { "label": "Titelseite — Recto + Leerseite davor" },
+    "sectionNewPage": { "label": "Seitenumbruch vor jedem H1" },
+    "sectionTitleRectoBlankBefore": { "label": "Kapitel (H1) — Recto + Leerseite davor" },
+    "tocPosition": {
+      "label": "Inhaltsverzeichnis",
+      "values": { "none": "Keins", "start": "Anfang", "end": "Ende" }
+    },
+    "tocDepth": {
+      "label": "IV-Tiefe",
+      "values": { "1": "Nur H1", "2": "H1 + H2", "3": "H1 + H2 + H3" }
+    },
+    "bibliographyPosition": {
+      "label": "Bibliographie",
+      "values": { "none": "Keine", "start": "Anfang", "end": "Ende" }
+    },
+    "widowsOrphans": {
+      "label": "Huren- und Schusterjungen",
+      "values": { "on": "Ein", "off": "Aus" }
+    },
+    "showAnnexes": { "label": "Anhänge-Abschnitt" },
+    "showBackCover": { "label": "Rückumschlag" }
+  },
+  "doc": {
+    "labelToc": "Inhaltsverzeichnis",
+    "labelBibliography": "Literaturverzeichnis",
+    "labelIndex": "Register",
+    "labelGlossary": "Glossar",
+    "labelListFigures": "Abbildungsverzeichnis",
+    "labelAnnexes": "Anhänge"
+  },
+  "sections": {
+    "cover": "Umschlag",
+    "titleCredits": "Titelseite / Impressum",
+    "toc": "Inhaltsverzeichnis",
+    "body": "Haupttext",
+    "annexes": "Anhänge",
+    "listFigures": "Abbildungsverzeichnis",
+    "bibliography": "Bibliographie",
+    "indexGlossary": "Index / Glossar",
+    "backCover": "Rückumschlag"
+  }
+}

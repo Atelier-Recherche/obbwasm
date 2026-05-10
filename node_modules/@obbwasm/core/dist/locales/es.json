@@ -1,0 +1,177 @@
+{
+    "ui": {
+        "brand": "ObbWasm",
+        "tabContent": "Contenido",
+        "tabCover": "Cubierta",
+        "tabImposition": "Imposición",
+        "tabPdf": "PDF",
+        "themeLight": "Claro",
+        "themeDark": "Oscuro",
+        "language": "Idioma de la interfaz",
+        "documentLanguage": "Idioma del documento",
+        "login": "Iniciar sesión",
+        "logout": "Cerrar sesión",
+        "saveProject": "Guardar proyecto",
+        "templatesLoading": "Cargando plantillas…",
+        "statusReady": "Listo.",
+        "tooltipMdToTypst": "Conversión Pandoc WASM a Typst (documento intermedio). Formatos: md, docx, html, odt, epub, latex, rtf, txt… Bibliografía .bib si se proporciona.",
+        "tooltipCompilePdf": "Compilación Typst WASM a PDF (plantilla seleccionada + contenido Typst).",
+        "mdToTypst": "Md → Typst",
+        "pdf": "PDF",
+        "download": "Descargar",
+        "pack": "Paquete",
+        "optionalNormalize": "Opcional — normalizar a Markdown",
+        "normalizeHint": "Útil para homogeneizar epub / docx / pdf / etc. antes del flujo Typst.",
+        "toMarkdown": "A Markdown",
+        "editPresets": "Editar ajustes JSON",
+        "hide": "Ocultar",
+        "savePresets": "Guardar ajustes",
+        "templateEdit": "Edición de plantilla (.typ)",
+        "templateEditHint": "Solo se pueden guardar copias en user-templates/. Duplicar o importar ZIP.",
+        "loadSource": "Cargar fuente",
+        "loading": "Cargando…",
+        "saveServer": "Guardar en el servidor",
+        "title": "Título",
+        "author": "Autor",
+        "publisher": "Editorial",
+        "sourceFormat": "Formato de origen",
+        "sourceFile": "Archivo manuscrito",
+        "bibFile": "Bibliografía (.bib)",
+        "imagesDetected": "Imágenes detectadas",
+        "coverInternal": "Portadilla interior",
+        "editor": "Editorial",
+        "grammage": "Gramaje",
+        "innerPages": "Páginas interiores",
+        "spineCalc": "Lomo (mm)",
+        "coverTemplate": "Plantilla de cubierta",
+        "coverFormula": "Fórmula: (Páginas / 2) × Grosor del papel",
+        "pdfInteriorCount": "PDF interior para recuento",
+        "generateCoverPdf": "Generar PDF de cubierta",
+        "impositionDisabled": "La imposición automática (servidor) está desactivada. Solo generación PDF Typst.",
+        "pdfInterior": "PDF interior (desde Contenido o archivo externo)",
+        "pagesHint": "páginas",
+        "noPdfHint": "Sin PDF: genere en Contenido o cargue un archivo.",
+        "impositionTemplate": "Plantilla de imposición",
+        "paperThicknessMm": "Grosor del papel (mm/hoja)",
+        "generateImpositionPdf": "Generar PDF de imposición",
+        "downloadPair": "Descargar",
+        "pdfTabEmpty": "Aún no hay PDF. Compile desde Contenido o cargue un PDF.",
+        "modalTemplatePreview": "Vista previa de plantilla",
+        "templateNotFound": "Plantilla no encontrada.",
+        "format": "Formato",
+        "version": "Versión",
+        "file": "Archivo",
+        "variablesJson": "Variables (plantilla JSON)",
+        "close": "Cerrar",
+        "bookOptions": "Opciones de maquetación",
+        "bookOptionsNone": "Esta plantilla no expone opciones de maquetación en la interfaz.",
+        "sectionOrder": "Orden de secciones",
+        "sectionOrderHint": "Arrastrar para reordenar (solo secciones activas).",
+        "customLabels": "Etiquetas del documento (opcional)",
+        "stringsPlaceholder": "Vacío = idioma del documento por defecto",
+        "downloadInterior": "Descargar PDF interior",
+        "optionSections": {
+            "structure": "Estructura e índice",
+            "headersPages": "Cabeceras, pies y paginación",
+            "typography": "Tipografía",
+            "content": "Imágenes, notas y leyendas",
+            "backMatter": "Anexos y cierre"
+        }
+    },
+    "options": {
+        "chapterTitleInHeader": { "label": "Título de capítulo en cabecera" },
+        "pageNumberPlacement": {
+            "label": "Posición del número de página",
+            "values": { "spread": "Izquierda–derecha", "center": "Centro", "outer": "Exterior (facing)" }
+        },
+        "headerFooterRule": {
+            "label": "Línea separadora (cabecera / pie)",
+            "values": { "none": "Ninguna", "thin": "Fina", "thick": "Gruesa" }
+        },
+        "pageNumberStyle": {
+            "label": "Estilo de numeración",
+            "values": { "arabic": "Arábigos", "roman": "Romanos", "page-n-of-m": "Página X de Y" }
+        },
+        "autoHeadingNumbering": { "label": "Numeración automática de títulos" },
+        "h1Typography": {
+            "label": "Estilo del H1 (capítulo)",
+            "values": { "uppercase": "Mayúsculas", "normal": "Caja normal", "centered": "Centrado", "left": "Alineado a la izquierda" }
+        },
+        "dropCapFirstPara": { "label": "Letra capital en el primer párrafo" },
+        "lineSpacingPreset": {
+            "label": "Interlineado",
+            "values": { "standard": "Estándar", "narrow": "Estrecho", "wide": "Amplio" }
+        },
+        "chapterStartOdd": { "label": "Forzar inicio de capítulo en página impar" },
+        "bindingGutterMm": {
+            "label": "Muelle de encuadernación",
+            "values": { "0": "0 mm", "5": "5 mm", "10": "10 mm" }
+        },
+        "transitionBlankStyle": {
+            "label": "Páginas en blanco de transición",
+            "values": { "empty": "Totalmente en blanco", "with-running-headers": "Con cabecera y pie" }
+        },
+        "captionPosition": {
+            "label": "Posición de leyendas",
+            "values": { "above": "Encima", "below": "Debajo" }
+        },
+        "footnoteScope": {
+            "label": "Notas al pie",
+            "values": { "document": "Continuas en el documento", "chapter": "Reiniciar por capítulo" }
+        },
+        "imageTreatment": {
+            "label": "Tratamiento de imágenes",
+            "values": { "full-width": "Ancho completo", "float": "Flotante", "auto-margins": "Márgenes automáticos" }
+        },
+        "accentColor": { "label": "Color de acento (hex)" },
+        "showIndex": { "label": "Índice alfabético" },
+        "listFiguresStyle": {
+            "label": "Lista de figuras / tablas",
+            "values": { "none": "Ninguna", "after-toc": "Tras el índice", "end": "Fin del documento" }
+        },
+        "showGlossary": { "label": "Glosario" },
+        "coverPage": { "label": "Portadilla interior" },
+        "halfTitlePage": { "label": "Página de medio título" },
+        "titlePage": { "label": "Página de título / créditos" },
+        "frontTitleRectoBlankBefore": { "label": "Título — recto + página en blanco antes" },
+        "sectionNewPage": { "label": "Salto de página antes de cada H1" },
+        "sectionTitleRectoBlankBefore": { "label": "Capítulos (H1) — recto + blanco antes" },
+        "tocPosition": {
+            "label": "Índice (TOC)",
+            "values": { "none": "Ninguno", "start": "Inicio del documento", "end": "Fin del documento" }
+        },
+        "tocDepth": {
+            "label": "Niveles en el índice",
+            "values": { "1": "Solo H1", "2": "H1 + H2", "3": "H1 + H2 + H3" }
+        },
+        "bibliographyPosition": {
+            "label": "Bibliografía",
+            "values": { "none": "Ninguna", "start": "Inicio del documento", "end": "Fin del documento" }
+        },
+        "widowsOrphans": {
+            "label": "Viudas y huérfanas",
+            "values": { "on": "Activado", "off": "Desactivado" }
+        },
+        "showAnnexes": { "label": "Incluir sección anexos" },
+        "showBackCover": { "label": "Contracubierta" }
+    },
+    "doc": {
+        "labelToc": "Índice",
+        "labelBibliography": "Bibliografía",
+        "labelIndex": "Índice analítico",
+        "labelGlossary": "Glosario",
+        "labelListFigures": "Índice de figuras",
+        "labelAnnexes": "Anexos"
+    },
+    "sections": {
+        "cover": "Cubierta",
+        "titleCredits": "Página de título / créditos",
+        "toc": "Índice",
+        "body": "Cuerpo del texto",
+        "annexes": "Anexos",
+        "listFigures": "Lista de figuras",
+        "bibliography": "Bibliografía",
+        "indexGlossary": "Índice / Glosario",
+        "backCover": "Contracubierta"
+    }
+}

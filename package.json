@@ -1,0 +1,8 @@
+{
+  "name": "obbwasm-monorepo",
+  "private": true,
+  "workspaces": ["web", "packages/*", "obsidian-plugin"],
+  "scripts": {
+    "build": "npm run build -w @obbwasm/core && npm run build -w web && npm run build -w obsidian-plugin"
+  }
+}

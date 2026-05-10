@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "bundleZipUrl": "https://example.com/typeset-bundle.zip",
+  "templates": [
+    {
+      "id": "garamond-brsnoba5",
+      "name": "Garamond brsnoba5",
+      "mainTypPath": "typeset/typst/layout/Garamond-brsnoba5-layout.typ",
+      "variables": {}
+    }
+  ]
+}
