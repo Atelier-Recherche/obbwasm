@@ -1,3 +1,10 @@
+// @obbwasm-meta begin
+// nom-complet: Gabarit test minimal (sans police custom)
+// version: v1.0
+// detail: Validation pipeline Pandoc WASM → Typst WASM → PDF, B5 143.5×210 mm.
+// format: basic-b5
+// @obbwasm-meta end
+//
 // Template de test ultra basique (sans fonte custom).
 // Objectif: valider le pipeline Pandoc WASM -> Typst WASM -> PDF.
 

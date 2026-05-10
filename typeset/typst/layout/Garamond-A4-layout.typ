@@ -1,3 +1,10 @@
+// @obbwasm-meta begin
+// nom-complet: Gabarits livre format A4 avec police Garamond
+// version: v1.0
+// detail: Mise en page A4 (210mm x 297mm), 11pt, marges élargies.
+// format: garamond-a4
+// @obbwasm-meta end
+//
 // Gabarit autonome — équivalent cible : Garamond-A4-layout.tex (A4, 11pt, marges élargies).
 // Même logique fancyhdr / titlesec que Garamond-brsnoba5-layout.typ.
 //

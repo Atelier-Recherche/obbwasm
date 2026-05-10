@@ -16,14 +16,28 @@ import {
   LogOut,
   Shield,
   Send,
+  Save,
+  ArrowBigRight,
+  Printer,
 } from "lucide-react";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { TypstCompiler } from "@myriaddreamin/typst.ts";
 import typstCompilerWasmUrl from "@myriaddreamin/typst-ts-web-compiler/wasm?url";
 import { setImportWasmModule } from "@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler.mjs";
+import { ProgressOverlay } from "./ProgressOverlay";
+import { PdfPageViewer } from "./PdfPageViewer";
+import { WasmIcon } from "./WasmIcon";
+import { TemplatePicker } from "./TemplatePicker";
+import { parseTemplateMeta, displayTitle, type TemplateMeta } from "./parseTemplateMeta";
+import { fetchCachedArrayBuffer } from "./wasmCache";
+import { defaultMdPresets, loadMdPresets, saveMdPresets } from "./pandocMdPresets";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
+
+const TOOLTIP_MD_TO_TYPST =
+  "Conversion Pandoc WASM vers Typst (document intermédiaire). Formats source : md, docx, html, odt, epub, latex, rtf, txt… selon le format choisi. La bibliographie .bib est prise en charge si chargée.";
+const TOOLTIP_COMPILE_PDF = "Compilation Typst WASM vers PDF (mise en page du gabarit sélectionné + contenu Typst).";
 
 type Template = {
   id: string;
@@ -280,6 +294,7 @@ export default function App() {
   const [generatedPdfName, setGeneratedPdfName] = useState("");
   const [coverPreviewUrl, setCoverPreviewUrl] = useState("");
   const [coverPdfName, setCoverPdfName] = useState("");
+  const [coverPdfFile, setCoverPdfFile] = useState<File | null>(null);
   const [impositionPreviewUrl, setImpositionPreviewUrl] = useState("");
   const [impositionPdfName, setImpositionPdfName] = useState("");
   const [status, setStatus] = useState("Pret.");
@@ -297,6 +312,15 @@ export default function App() {
   const [forkName, setForkName] = useState("");
   const [submissionName, setSubmissionName] = useState("");
   const [adminSubmissions, setAdminSubmissions] = useState<Array<Record<string, unknown>>>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateMetaById, setTemplateMetaById] = useState<Record<string, TemplateMeta>>({});
+  const [templatePreviewId, setTemplatePreviewId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ phase: string; ratio?: number } | null>(null);
+  const [templateEditorSource, setTemplateEditorSource] = useState("");
+  const [templateEditorLoading, setTemplateEditorLoading] = useState(false);
+  const [showMdPresetEditor, setShowMdPresetEditor] = useState(false);
+  const [mdPresetJson, setMdPresetJson] = useState("");
+  const [typstPkgUploadName, setTypstPkgUploadName] = useState("");
 
   const imageRefs = useMemo(() => extractMarkdownImages(sourceText), [sourceText]);
   const lintIssues = useMemo(() => findInvisibleChars(sourceText), [sourceText]);
@@ -304,6 +328,8 @@ export default function App() {
     () => templates.find((t) => t.id === selectedTemplate),
     [templates, selectedTemplate],
   );
+
+  const templateListSig = useMemo(() => templates.map((t) => `${t.id}:${t.mainTypPath}`).join("|"), [templates]);
 
   const coverTemplateChoices = useMemo(() => {
     const layoutPath = selectedTemplateObj?.mainTypPath ?? "";
@@ -366,18 +392,80 @@ export default function App() {
     setImpositionPaperThicknessMm(paperThickness);
   }, [paperThickness]);
 
+  useEffect(() => {
+    if (templates.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const entries = await Promise.all(
+        templates.map(async (t) => {
+          try {
+            const res = await apiFetch(`${apiBase}/template-source.php?path=${encodeURIComponent(t.mainTypPath)}`);
+            const data = await res.json();
+            if (!data.ok || typeof data.source !== "string") return [t.id, null] as const;
+            return [t.id, parseTemplateMeta(data.source)] as const;
+          } catch {
+            return [t.id, null] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setTemplateMetaById((prev) => {
+        const next = { ...prev };
+        for (const [id, meta] of entries) {
+          if (meta) next[id] = meta;
+        }
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [templateListSig]);
+
   function pushLog(message: string) {
     const ts = new Date().toISOString();
     setLogs((prev) => [`[${ts}] ${message}`, ...prev].slice(0, 200));
   }
 
   async function fetchTemplates() {
-    const res = await apiFetch(`${apiBase}/templates.php`);
-    const data = await res.json();
-    if (data.ok) {
-      setTemplates(data.items);
-      if (!selectedTemplate && data.items.length > 0) {
-        setSelectedTemplate(data.items[0].id);
+    setTemplatesLoading(true);
+    try {
+      const res = await apiFetch(`${apiBase}/templates.php`);
+      const data = await res.json();
+      if (data.ok) {
+        setTemplates(data.items);
+        setSelectedTemplate((prev) => prev || (data.items[0]?.id ?? ""));
+      }
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function ensureTemplatesLoaded() {
+    if (templates.length > 0) return;
+    await fetchTemplates();
+  }
+
+  async function mountTypstPackages(compiler: TypstCompiler) {
+    let listRes: Response;
+    try {
+      listRes = await apiFetch(`${apiBase}/typst-packages.php`);
+    } catch {
+      return;
+    }
+    const listData = await listRes.json().catch(() => ({}));
+    if (!listData.ok || !Array.isArray(listData.items) || listData.items.length === 0) return;
+    for (const pkg of listData.items as { id: string }[]) {
+      const zres = await apiFetch(`${apiBase}/typst-packages.php?action=archive&id=${encodeURIComponent(pkg.id)}`);
+      if (!zres.ok) continue;
+      const buf = await zres.arrayBuffer();
+      const zip = await JSZip.loadAsync(buf);
+      for (const path of Object.keys(zip.files)) {
+        const entry = zip.files[path];
+        if (!entry || entry.dir) continue;
+        const u8 = await entry.async("uint8array");
+        const vfs = path.startsWith("/") ? path : `/${path}`;
+        compiler.mapShadow(vfs, u8);
       }
     }
   }
@@ -428,8 +516,12 @@ export default function App() {
       setPreviewUrl(url);
       setGeneratedPdfName(fileName);
     } else if (target === "cover") {
-      setCoverPreviewUrl(url);
+      setCoverPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
       setCoverPdfName(fileName);
+      setCoverPdfFile(new File([blob], fileName, { type: "application/pdf" }));
     } else {
       setImpositionPreviewUrl(url);
       setImpositionPdfName(fileName);
@@ -490,40 +582,47 @@ export default function App() {
 
   async function ensureWasmCompiler(): Promise<TypstCompiler> {
     if (compilerRef.current) return compilerRef.current;
-    if (!typstWasmImporterReady.current) {
-      setImportWasmModule(async () => {
-        const res = await fetch(typstCompilerWasmUrl);
-        if (!res.ok) throw new Error(`Impossible de charger le WASM Typst: ${res.status}`);
-        return await res.arrayBuffer();
-      });
-      typstWasmImporterReady.current = true;
-    }
-    const typst = await import("@myriaddreamin/typst.ts");
-    const compiler = typst.createTypstCompiler();
-    const fontsRes = await apiFetch(`${apiBase}/font-assets.php?action=list`);
-    const fontsData = await fontsRes.json();
-    const fontItems: Array<{ path: string; name: string; size: number }> = fontsData?.ok ? fontsData.items ?? [] : [];
-    const fontBuffers: Uint8Array[] = [];
-    for (const item of fontItems) {
-      try {
-        const res = await apiFetch(`${apiBase}/font-assets.php?action=file&path=${encodeURIComponent(item.path)}`);
-        if (!res.ok) {
-          pushLog(`Font skip (${item.name}): HTTP ${res.status}`);
-          continue;
-        }
-        const buf = await res.arrayBuffer();
-        fontBuffers.push(new Uint8Array(buf));
-      } catch (e) {
-        pushLog(`Font load error (${item.name}): ${(e as Error).message}`);
+    setProgress({ phase: "Chargement moteur Typst WASM…" });
+    try {
+      if (!typstWasmImporterReady.current) {
+        setImportWasmModule(async () => {
+          return await fetchCachedArrayBuffer(typstCompilerWasmUrl);
+        });
+        typstWasmImporterReady.current = true;
       }
+      const typst = await import("@myriaddreamin/typst.ts");
+      const compiler = typst.createTypstCompiler();
+      const fontsRes = await apiFetch(`${apiBase}/font-assets.php?action=list`);
+      const fontsData = await fontsRes.json();
+      const fontItems: Array<{ path: string; name: string; size: number }> = fontsData?.ok ? fontsData.items ?? [] : [];
+      const fontBuffers: Uint8Array[] = [];
+      const n = Math.max(fontItems.length, 1);
+      for (let i = 0; i < fontItems.length; i++) {
+        const item = fontItems[i];
+        setProgress({ phase: `Polices ${i + 1} / ${fontItems.length}`, ratio: (i + 1) / n });
+        try {
+          const res = await apiFetch(`${apiBase}/font-assets.php?action=file&path=${encodeURIComponent(item.path)}`);
+          if (!res.ok) {
+            pushLog(`Font skip (${item.name}): HTTP ${res.status}`);
+            continue;
+          }
+          const buf = await res.arrayBuffer();
+          fontBuffers.push(new Uint8Array(buf));
+        } catch (e) {
+          pushLog(`Font load error (${item.name}): ${(e as Error).message}`);
+        }
+      }
+      setProgress({ phase: "Initialisation compilateur…", ratio: undefined });
+      await compiler.init({
+        beforeBuild: [typst.loadFonts(fontBuffers)],
+      });
+      compilerRef.current = compiler;
+      setWasmReady(true);
+      pushLog(`Typst compiler init OK (fonts chargees: ${fontBuffers.length}/${fontItems.length}).`);
+      return compiler;
+    } finally {
+      setProgress(null);
     }
-    await compiler.init({
-      beforeBuild: [typst.loadFonts(fontBuffers)],
-    });
-    compilerRef.current = compiler;
-    setWasmReady(true);
-    pushLog(`Typst compiler init OK (fonts chargees: ${fontBuffers.length}/${fontItems.length}).`);
-    return compiler;
   }
 
   async function convertWithPandocWasm() {
@@ -531,6 +630,7 @@ export default function App() {
       setStatus("Aucune source chargee.");
       return;
     }
+    setProgress({ phase: "Conversion Pandoc → Typst…" });
     setStatus("Conversion Pandoc WASM -> Typst...");
     try {
       const pandoc = await import("pandoc-wasm");
@@ -570,6 +670,53 @@ export default function App() {
     } catch (err) {
       setStatus(`Erreur Pandoc WASM: ${(err as Error).message}`);
       pushLog(`Erreur Pandoc WASM: ${(err as Error).message}`);
+    } finally {
+      setProgress(null);
+    }
+  }
+
+  async function convertNormalizeToMd() {
+    if (!sourceText.trim() && !sourceFileBlob) {
+      setStatus("Aucune source chargee pour normaliser.");
+      return;
+    }
+    const presets = loadMdPresets();
+    const baseKey = sourceFormat in presets ? sourceFormat : "md";
+    const opts = { ...(presets[baseKey] ?? defaultMdPresets[sourceFormat] ?? defaultMdPresets.md) };
+    setProgress({ phase: "Normalisation → Markdown…" });
+    setStatus("Normalisation Pandoc WASM → Markdown...");
+    try {
+      const pandoc = await import("pandoc-wasm");
+      const options: Record<string, unknown> = {
+        ...opts,
+        to: "markdown",
+      };
+      if (!options.from && sourceFormat !== "md") {
+        options.from = sourceFormat === "txt" ? "plain" : sourceFormat;
+      }
+      if (sourceFormat === "md") {
+        options.from = "markdown";
+      }
+      const files: Record<string, string | Blob> = {};
+      let stdin: string | null = sourceText;
+      if (!stdin && sourceFileBlob) {
+        const ext = sourceFileName.split(".").pop() || sourceFormat;
+        const inputName = `input.${ext}`;
+        files[inputName] = sourceFileBlob;
+        options["input-files"] = [inputName];
+        stdin = null;
+      }
+      const result = await pandoc.convert(options, stdin, files);
+      const out = result.stdout || "";
+      setSourceText(applyMicroTypography(out));
+      setSourceFormat("md");
+      setRenderLog(result.stderr || "");
+      setStatus("Markdown genere (etape pre-contenu).");
+      pushLog(`Normalisation MD: ${out.length} caracteres.`);
+    } catch (err) {
+      setStatus(`Erreur normalisation MD: ${(err as Error).message}`);
+    } finally {
+      setProgress(null);
     }
   }
 
@@ -578,6 +725,7 @@ export default function App() {
       setStatus("Aucun Typst genere.");
       return;
     }
+    setProgress({ phase: "Compilation Typst → PDF…" });
     setStatus("Compilation Typst WASM -> PDF...");
     try {
       const tpl = templates.find((t) => t.id === selectedTemplate);
@@ -598,6 +746,7 @@ export default function App() {
       const compiler = await ensureWasmCompiler();
       compiler.reset();
       compiler.resetShadow();
+      await mountTypstPackages(compiler);
       compiler.addSource("/template.typ", String(tplData.source));
       compiler.addSource("/content.typ", generatedTypst);
       compiler.addSource(
@@ -651,10 +800,13 @@ export default function App() {
     } catch (err) {
       setStatus(`Erreur Typst WASM: ${(err as Error).message}`);
       pushLog(`Erreur Typst WASM: ${(err as Error).message}`);
+    } finally {
+      setProgress(null);
     }
   }
 
   async function compileCoverTypstToPdfWasm() {
+    setProgress({ phase: "Couverture Typst → PDF…" });
     setStatus("Compilation couverture Typst WASM -> PDF...");
     try {
       const path = selectedCoverTemplatePath;
@@ -672,6 +824,7 @@ export default function App() {
       const compiler = await ensureWasmCompiler();
       compiler.reset();
       compiler.resetShadow();
+      await mountTypstPackages(compiler);
       let source = String(tplData.source);
       source = overrideTypstLet(source, "title", JSON.stringify(title));
       source = overrideTypstLet(source, "author", JSON.stringify(author));
@@ -695,10 +848,13 @@ export default function App() {
     } catch (err) {
       setStatus(`Erreur couverture Typst WASM: ${(err as Error).message}`);
       pushLog(`Erreur couverture Typst WASM: ${(err as Error).message}`);
+    } finally {
+      setProgress(null);
     }
   }
 
   async function compileImpositionTypstToPdfWasm() {
+    setProgress({ phase: "Imposition Typst → PDF…" });
     setStatus("Compilation imposition Typst WASM -> PDF...");
     try {
       const path = selectedImpositionTemplatePath;
@@ -726,6 +882,7 @@ export default function App() {
       const compiler = await ensureWasmCompiler();
       compiler.reset();
       compiler.resetShadow();
+      await mountTypstPackages(compiler);
       const pdfBytes = new Uint8Array(await pdfFile.arrayBuffer());
       compiler.mapShadow("/export.pdf", pdfBytes);
       compiler.mapShadow("export.pdf", pdfBytes);
@@ -758,7 +915,56 @@ export default function App() {
     } catch (err) {
       setStatus(`Erreur imposition Typst WASM: ${(err as Error).message}`);
       pushLog(`Erreur imposition Typst WASM: ${(err as Error).message}`);
+    } finally {
+      setProgress(null);
     }
+  }
+
+  async function loadTemplateSourceForEdit() {
+    const tpl = templates.find((t) => t.id === selectedTemplate);
+    if (!tpl?.mainTypPath) {
+      setStatus("Selectionnez un gabarit.");
+      return;
+    }
+    setTemplateEditorLoading(true);
+    try {
+      const res = await apiFetch(`${apiBase}/template-source.php?path=${encodeURIComponent(tpl.mainTypPath)}`);
+      const data = await res.json();
+      if (data.ok && typeof data.source === "string") {
+        setTemplateEditorSource(data.source);
+        setStatus("Source gabarit chargee pour edition.");
+      } else {
+        setStatus(`Lecture gabarit: ${data.error ?? "erreur"}`);
+      }
+    } finally {
+      setTemplateEditorLoading(false);
+    }
+  }
+
+  async function saveTemplateSourceEdit() {
+    const tpl = templates.find((t) => t.id === selectedTemplate);
+    if (!tpl?.mainTypPath) return;
+    if (!tpl.mainTypPath.startsWith("user-templates/")) {
+      setStatus("Dupliquez le gabarit pour obtenir une copie editable (Import ZIP ou Dupliquer).");
+      return;
+    }
+    const res = await apiFetch(`${apiBase}/template-save.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: tpl.mainTypPath, source: templateEditorSource }),
+    });
+    const data = await res.json();
+    setStatus(data.ok ? "Gabarit enregistre." : `Erreur: ${data.error ?? ""}`);
+    if (data.ok) void fetchTemplates();
+  }
+
+  async function uploadTypstPackageZip(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("name", typstPkgUploadName.trim() || file.name.replace(/\.zip$/i, ""));
+    const res = await apiFetch(`${apiBase}/typst-packages.php`, { method: "POST", body: form });
+    const data = await res.json();
+    setStatus(data.ok ? `Paquet Typst publie: ${data.item?.id ?? ""}` : `Paquet: ${data.error ?? "erreur"}`);
   }
 
   async function exportPrintPack() {
@@ -966,6 +1172,10 @@ export default function App() {
   }
 
   useEffect(() => {
+    void fetchTemplates();
+  }, []);
+
+  useEffect(() => {
     void refreshAuth();
     const q = new URLSearchParams(window.location.search).get("auth");
     if (q === "ok") {
@@ -981,8 +1191,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-header-main">
-          <h1>OBBWASM Studio</h1>
-          <p className="sub">Modules A/B/C + preview PDF + stockage JSON via PHP (styles portes par template)</p>
+          <h1>OBB WASM</h1>
         </div>
         <div className="app-header-auth">
           {!authChecked ? (
@@ -1014,87 +1223,31 @@ export default function App() {
               {loginMessage && <span className="login-hint">{loginMessage}</span>}
             </div>
           )}
+          <div className="app-header-tools">
+            <button
+              type="button"
+              className="btn-icon"
+              onClick={() => setShowDebug((v) => !v)}
+              title={showDebug ? "Masquer le journal" : "Afficher le journal debug"}
+            >
+              <Bug size={18} aria-hidden />
+              <span className="sr-only">{showDebug ? "Masquer debug" : "Debug"}</span>
+            </button>
+            <button
+              type="button"
+              className="btn-icon btn-theme-toggle"
+              onClick={toggleColorTheme}
+              title="Theme clair / sombre"
+            >
+              {colorTheme === "dark" ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
+              <span className="sr-only">Basculer theme</span>
+            </button>
+            <WasmIcon active={wasmReady} />
+          </div>
         </div>
       </header>
 
-      <div className="toolbar">
-        <button type="button" onClick={() => void fetchTemplates()}>
-          <Upload size={16} aria-hidden /> Charger templates
-        </button>
-        <select value={selectedTemplate} onChange={(e) => setSelectedTemplate(e.target.value)} aria-label="Template">
-          <option value="">Selectionner un template</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-        {authUser && (
-          <>
-            <input
-              className="fork-name-input"
-              placeholder="Nom du fork (optionnel)"
-              value={forkName}
-              onChange={(e) => setForkName(e.target.value)}
-            />
-            <button type="button" onClick={() => void forkSelectedTemplate()}>
-              Dupliquer template
-            </button>
-            <button type="button" onClick={() => void exportSelectedThemeZip()}>
-              <Download size={16} aria-hidden /> Export ZIP theme
-            </button>
-            <label className="btn-file">
-              <Upload size={16} aria-hidden /> Import ZIP
-              <input
-                type="file"
-                accept=".zip,application/zip"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) void importThemeFromFile(f);
-                }}
-              />
-            </label>
-            <input
-              className="fork-name-input"
-              placeholder="Nom soumission / import"
-              value={submissionName}
-              onChange={(e) => setSubmissionName(e.target.value)}
-            />
-            <label className="btn-file">
-              <Send size={16} aria-hidden /> Soumettre theme
-              <input
-                type="file"
-                accept=".zip,application/zip"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) void submitThemeForReview(f);
-                }}
-              />
-            </label>
-          </>
-        )}
-        <button type="button" onClick={() => void saveProject()}>Enregistrer projet</button>
-        <button type="button" onClick={() => void convertWithPandocWasm()}>Pandoc WASM {"->"} Typst</button>
-        <button type="button" onClick={() => void compileTypstToPdfWasm()}>Typst WASM {"->"} PDF</button>
-        <button type="button" onClick={downloadGeneratedPdf}>
-          <Download size={16} aria-hidden /> PDF genere
-        </button>
-        <button type="button" onClick={() => void exportPrintPack()}>
-          <Package size={16} aria-hidden /> Pack impression
-        </button>
-        <button type="button" onClick={() => setShowDebug((v) => !v)}>
-          <Bug size={16} aria-hidden /> {showDebug ? "Masquer debug" : "Debug"}
-        </button>
-        <button type="button" className="btn-theme-toggle" onClick={toggleColorTheme} title="Theme clair / sombre">
-          {colorTheme === "dark" ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
-          <span className="sr-only">Basculer theme</span>
-        </button>
-        <span className="wasm-badge">WASM: {wasmReady ? "pret" : "off"}</span>
-      </div>
+      <ProgressOverlay phase={progress?.phase ?? null} ratio={progress?.ratio} />
 
       {authUser?.isAdmin && (
         <section className="panel admin-panel">
@@ -1119,6 +1272,32 @@ export default function App() {
               </li>
             ))}
           </ul>
+          <h3 className="admin-subheading">Paquets Typst globaux</h3>
+          <p className="sub">
+            Deposez un ZIP (arborescence des fichiers .typ du paquet). Visible et monte pour tous les utilisateurs lors des compilations.
+          </p>
+          <div className="admin-pkg-row">
+            <input
+              type="text"
+              placeholder="Libelle (optionnel)"
+              value={typstPkgUploadName}
+              onChange={(e) => setTypstPkgUploadName(e.target.value)}
+              className="fork-name-input"
+            />
+            <label className="btn-file">
+              <Upload size={16} aria-hidden /> Publier ZIP paquet
+              <input
+                type="file"
+                accept=".zip,application/zip"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void uploadTypstPackageZip(f);
+                }}
+              />
+            </label>
+          </div>
         </section>
       )}
 
@@ -1147,8 +1326,170 @@ export default function App() {
       </nav>
 
       {tab === "contenu" && (
-        <section className="panel">
-          <h2>Module A - Pipeline de Contenu</h2>
+        <section className="panel panel-contenu">
+          <div className="content-toolbar sticky-toolbar">
+            <TemplatePicker
+              templates={templates}
+              selectedId={selectedTemplate}
+              metaById={templateMetaById}
+              loading={templatesLoading}
+              onOpenMenu={() => void ensureTemplatesLoaded()}
+              onSelect={(id) => setSelectedTemplate(id)}
+              onPreview={(id) => setTemplatePreviewId(id)}
+            />
+            {authUser && (
+              <div className="content-toolbar-auth">
+                <input
+                  className="fork-name-input"
+                  placeholder="Nom du fork (optionnel)"
+                  value={forkName}
+                  onChange={(e) => setForkName(e.target.value)}
+                />
+                <button type="button" onClick={() => void forkSelectedTemplate()}>
+                  Dupliquer
+                </button>
+                <button type="button" onClick={() => void exportSelectedThemeZip()} title="Exporter le theme en ZIP">
+                  <Download size={16} aria-hidden /> Export
+                </button>
+                <label className="btn-file">
+                  <Upload size={16} aria-hidden /> Import
+                  <input
+                    type="file"
+                    accept=".zip,application/zip"
+                    hidden
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) void importThemeFromFile(f);
+                    }}
+                  />
+                </label>
+                <input
+                  className="fork-name-input"
+                  placeholder="Nom soumission / import"
+                  value={submissionName}
+                  onChange={(e) => setSubmissionName(e.target.value)}
+                />
+                <label className="btn-file">
+                  <Send size={16} aria-hidden /> Soumettre
+                  <input
+                    type="file"
+                    accept=".zip,application/zip"
+                    hidden
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) void submitThemeForReview(f);
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+            <button
+              type="button"
+              className="btn-icon"
+              title="Enregistrer le projet sur le serveur"
+              aria-label="Enregistrer le projet"
+              onClick={() => void saveProject()}
+            >
+              <Save size={18} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="btn-with-icon"
+              title={TOOLTIP_MD_TO_TYPST}
+              onClick={() => void convertWithPandocWasm()}
+            >
+              <ArrowBigRight size={18} aria-hidden /> Md → Typst
+            </button>
+            <button
+              type="button"
+              className="btn-with-icon"
+              title={TOOLTIP_COMPILE_PDF}
+              onClick={() => void compileTypstToPdfWasm()}
+            >
+              <Printer size={18} aria-hidden /> PDF
+            </button>
+            <button type="button" className="btn-with-icon" title="Telecharger le PDF interieur" onClick={downloadGeneratedPdf}>
+              <Download size={16} aria-hidden /> Telecharger
+            </button>
+            <button type="button" className="btn-with-icon" onClick={() => void exportPrintPack()}>
+              <Package size={16} aria-hidden /> Pack
+            </button>
+          </div>
+
+          <section className="subpanel">
+            <h3>Etape optionnelle — normaliser en Markdown</h3>
+            <p className="sub">
+              Utile pour homogeneiser epub / docx / pdf / etc. avant le flux Typst. Les resultats PDF→MD peuvent etre imparfaits.
+            </p>
+            <div className="checks">
+              <button type="button" onClick={() => void convertNormalizeToMd()}>
+                Vers Markdown
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => {
+                  setShowMdPresetEditor((v) => {
+                    const next = !v;
+                    if (next) setMdPresetJson((j) => j || JSON.stringify(loadMdPresets(), null, 2));
+                    return next;
+                  });
+                }}
+              >
+                {showMdPresetEditor ? "Masquer" : "Editer"} preregleges JSON
+              </button>
+            </div>
+            {showMdPresetEditor && (
+              <>
+                <textarea
+                  className="preset-json"
+                  value={mdPresetJson}
+                  onChange={(e) => setMdPresetJson(e.target.value)}
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const parsed = JSON.parse(mdPresetJson || "{}") as Record<string, Record<string, unknown>>;
+                      saveMdPresets(parsed);
+                      setStatus("Preregleges Markdown enregistres (local).");
+                    } catch {
+                      setStatus("JSON invalide pour les preregleges.");
+                    }
+                  }}
+                >
+                  Enregistrer preregleges
+                </button>
+              </>
+            )}
+          </section>
+
+          {authUser && (
+            <section className="subpanel">
+              <h3>Edition gabarit (.typ)</h3>
+              <p className="sub">
+                Seules les copies sous <code>user-templates/</code> sont enregistrables. Utilisez Dupliquer ou Import ZIP.
+              </p>
+              <div className="checks">
+                <button type="button" onClick={() => void loadTemplateSourceForEdit()} disabled={templateEditorLoading}>
+                  {templateEditorLoading ? "Chargement…" : "Charger source"}
+                </button>
+                <button type="button" onClick={() => void saveTemplateSourceEdit()}>
+                  Enregistrer sur le serveur
+                </button>
+              </div>
+              <textarea
+                value={templateEditorSource}
+                onChange={(e) => setTemplateEditorSource(e.target.value)}
+                placeholder="Chargez la source du gabarit selectionne…"
+                spellCheck={false}
+              />
+            </section>
+          )}
+
           <div className="grid">
             <label>Titre<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
             <label>Auteur<input value={author} onChange={(e) => setAuthor(e.target.value)} /></label>
@@ -1193,7 +1534,6 @@ export default function App() {
 
       {tab === "couverture" && (
         <section className="panel">
-          <h2>Module B - Couverture (Wrap)</h2>
           <div className="grid">
             <label>Titre<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
             <label>Auteur<input value={author} onChange={(e) => setAuthor(e.target.value)} /></label>
@@ -1218,23 +1558,52 @@ export default function App() {
             </label>
           </div>
           <p>Formule: (NbPages / 2) x EpaisseurFeuille = {spineThickness} mm</p>
-          <div className="checks">
-            <label>PDF interieur pour comptage<input type="file" accept="application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfFile(e.target.files[0])} /></label>
-            <button onClick={compileCoverTypstToPdfWasm}>Generer PDF couverture</button>
-            {coverPreviewUrl && <a href={coverPreviewUrl} download={coverPdfName || "cover-output.pdf"}>Telecharger {coverPdfName || "cover-output.pdf"}</a>}
+          <div className="cover-toolbar">
+            <label className="cover-toolbar-file">
+              PDF interieur pour comptage
+              <input type="file" accept="application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfFile(e.target.files[0])} />
+            </label>
+            <button type="button" className="btn-primary cover-toolbar-generate" onClick={() => void compileCoverTypstToPdfWasm()}>
+              Generer PDF couverture
+            </button>
           </div>
-          {coverPreviewUrl && <iframe className="preview" src={coverPreviewUrl} title="preview-cover" />}
+          {coverPreviewUrl ? (
+            <PdfPageViewer
+              file={coverPdfFile}
+              url={coverPreviewUrl}
+              downloadFileName={coverPdfName || "cover-output.pdf"}
+            />
+          ) : null}
         </section>
       )}
 
       {tab === "imposition" && (
         <section className="panel">
-          <h2>Module C - Imposition</h2>
           {!IMPOSITION_AUTO_ENABLED && (
             <p className="muted-banner">
               L&apos;imposition automatique (calcul serveur) est desactivee pour le moment. Seule la generation PDF via template Typst est disponible.
             </p>
           )}
+          <div className="checks pdf-upload-row">
+            <label>
+              PDF interieur (genere dans Contenu ou fichier externe)
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => e.target.files?.[0] && handlePdfFile(e.target.files[0])}
+              />
+            </label>
+            {pdfFile ? (
+              <span className="pdf-pages-hint">
+                {innerPages} page{innerPages > 1 ? "s" : ""} — {pdfFile.name}
+              </span>
+            ) : (
+              <span className="pdf-pages-hint muted">Aucun PDF : generez-en dans Contenu ou chargez un fichier.</span>
+            )}
+            {previewImgDataUrl ? (
+              <img src={previewImgDataUrl} alt="" className="pdf-thumb" width={72} height={96} />
+            ) : null}
+          </div>
           <div className="grid">
             <label>
               Template imposition
@@ -1271,24 +1640,64 @@ export default function App() {
 
       {tab === "pdf" && (
         <section className="panel">
-          <h2>PDF genere</h2>
-          {!previewUrl && <p>Aucun PDF genere pour le moment.</p>}
-          {previewUrl && (
-            <>
-              <div className="checks">
-                <a href={previewUrl} download={generatedPdfName || "typst-wasm-output.pdf"}>
-                  Telecharger {generatedPdfName || "typst-wasm-output.pdf"}
-                </a>
-              </div>
-              {previewImgDataUrl ? (
-                <img src={previewImgDataUrl} alt="Apercu PDF page 1" className="pdf-image-preview" />
-              ) : (
-                <iframe className="preview" src={previewUrl} title="preview-global" />
-              )}
-            </>
+          {!previewUrl ? (
+            <p>Aucun PDF genere pour le moment. Compilez depuis l&apos;onglet Contenu ou chargez un PDF depuis Couverture / Imposition.</p>
+          ) : (
+            <PdfPageViewer
+              file={pdfFile}
+              url={previewUrl}
+              downloadFileName={generatedPdfName || "typst-wasm-output.pdf"}
+            />
           )}
         </section>
       )}
+
+      {templatePreviewId ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tpl-preview-title"
+          onClick={() => setTemplatePreviewId(null)}
+          onKeyDown={(e) => e.key === "Escape" && setTemplatePreviewId(null)}
+        >
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <h2 id="tpl-preview-title">Apercu gabarit</h2>
+            {(() => {
+              const t = templates.find((x) => x.id === templatePreviewId);
+              if (!t) return <p>Gabarit introuvable.</p>;
+              const m = templateMetaById[t.id];
+              const title = displayTitle(m ?? { nomComplet: "", version: "", detail: "", format: "" }, t.name);
+              return (
+                <>
+                  <p className="modal-title-text">{title}</p>
+                  {m?.detail ? <p className="modal-detail">{m.detail}</p> : null}
+                  <ul className="modal-meta-list">
+                    {m?.format ? (
+                      <li>
+                        <strong>Format</strong> : {m.format}
+                      </li>
+                    ) : null}
+                    {m?.version ? (
+                      <li>
+                        <strong>Version</strong> : {m.version}
+                      </li>
+                    ) : null}
+                    <li>
+                      <strong>Fichier</strong> : {t.mainTypPath}
+                    </li>
+                  </ul>
+                  <p className="sub">Variables (JSON template)</p>
+                  <pre className="modal-pre">{JSON.stringify(t.variables, null, 2)}</pre>
+                </>
+              );
+            })()}
+            <button type="button" className="btn-primary modal-close" onClick={() => setTemplatePreviewId(null)}>
+              Fermer
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <footer>{status}</footer>
     </div>

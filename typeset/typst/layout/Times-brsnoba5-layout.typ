@@ -1,4 +1,11 @@
-// Gabarit autonome — équivalent cible : Times-brsnoba5-layout.tex
+// @obbwasm-meta begin
+// nom-complet: Gabarits pour livre format BrochSnob5 avec police Times New Roman
+// version: v1.0
+// detail: Modèle de mise en page pour un livre format B5 (143.5mm x 210mm), police Times.
+// format: brsnoba5-times
+// @obbwasm-meta end
+//
+// Gabarit autonome — équivalent cible : Times-brsnoba5-layout.typ
 // (même logique d’en-tête / titres que Garamond-brsnoba5-layout.typ ; police Times.)
 //
 // LIMITES Typst vs LaTeX : voir commentaires en tête de Garamond-brsnoba5-layout.typ

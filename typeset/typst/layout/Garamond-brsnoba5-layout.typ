@@ -1,3 +1,10 @@
+// @obbwasm-meta begin
+// nom-complet: Gabarits pour livre format BrochSnob5 avec police Garamond
+// version: v1.0
+// detail: Modèle de mise en page pour un livre format B5 (143.5mm x 210mm), avec gestion biographie et notes de bas de page.
+// format: brsnoba5
+// @obbwasm-meta end
+//
 // Gabarit autonome (pas de fichier partagé) — équivalent cible : Garamond-brsnoba5-layout.tex
 //
 // LIMITES Typst (moteur) vs LaTeX — pas d’équivalent fidèle :
