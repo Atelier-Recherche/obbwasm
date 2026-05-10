@@ -3,6 +3,7 @@
 // version: v1.0
 // detail: Mise en page A4 (210mm x 297mm), 11pt, marges élargies.
 // format: garamond-a4
+// supported-options: cover-page, half-title-page, title-page, toc-position, section-new-page, auto-heading-numbering
 // @obbwasm-meta end
 //
 // Gabarit autonome — équivalent cible : Garamond-A4-layout.tex (A4, 11pt, marges élargies).

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import {
   BookOpen,
@@ -29,15 +29,25 @@ import { ProgressOverlay } from "./ProgressOverlay";
 import { PdfPageViewer } from "./PdfPageViewer";
 import { WasmIcon } from "./WasmIcon";
 import { TemplatePicker } from "./TemplatePicker";
-import { parseTemplateMeta, displayTitle, type TemplateMeta } from "./parseTemplateMeta";
+import {
+  parseTemplateMeta,
+  displayTitle,
+  filterOptionIdsByTemplate,
+  type TemplateMeta,
+} from "./parseTemplateMeta";
+import { BOOK_OPTIONS } from "./bookOptions/registry";
+import { defaultBookLayoutState } from "./bookOptions/defaults";
+import { reconcileSectionOrder } from "./bookOptions/sectionVisibility";
+import { buildTypstOptsLines } from "./bookOptions/typstSerialize";
+import { resolveDocStrings } from "./bookOptions/docStrings";
+import { useI18n } from "./i18n/context";
+import { BookOptionsForm } from "./components/BookOptionsForm";
+import { SectionOrderList } from "./components/SectionOrderList";
+import { LanguageSelector } from "./components/LanguageSelector";
 import { fetchCachedArrayBuffer } from "./wasmCache";
 import { defaultMdPresets, loadMdPresets, saveMdPresets } from "./pandocMdPresets";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
-
-const TOOLTIP_MD_TO_TYPST =
-  "Conversion Pandoc WASM vers Typst (document intermédiaire). Formats source : md, docx, html, odt, epub, latex, rtf, txt… selon le format choisi. La bibliographie .bib est prise en charge si chargée.";
-const TOOLTIP_COMPILE_PDF = "Compilation Typst WASM vers PDF (mise en page du gabarit sélectionné + contenu Typst).";
 
 type Template = {
   id: string;
@@ -223,28 +233,6 @@ function buildImpositionMainTyp(
   return lines.join("\n");
 }
 
-function ToggleChip({
-  enabled,
-  onToggle,
-  label,
-}: {
-  enabled: boolean;
-  onToggle: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      className={`toggle-chip ${enabled ? "on" : "off"}`}
-      aria-pressed={enabled}
-      onClick={onToggle}
-    >
-      <span className="toggle-knob" aria-hidden="true" />
-      <span>{label}</span>
-    </button>
-  );
-}
-
 async function loadPdfPageCount(file: File): Promise<number> {
   const buf = await file.arrayBuffer();
   const pdf = await getDocument({ data: buf }).promise;
@@ -278,11 +266,7 @@ export default function App() {
   const [sourceFileBlob, setSourceFileBlob] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState("");
   const [sourceFormat, setSourceFormat] = useState("md");
-  const [includeCoverPage, setIncludeCoverPage] = useState(false);
-  const [tocPosition, setTocPosition] = useState<"none" | "start" | "end">("none");
-  const [sectionBreakH1H2, setSectionBreakH1H2] = useState(false);
-  const [sectionTitleRectoBlankBefore, setSectionTitleRectoBlankBefore] = useState(false);
-  const [frontTitleRectoBlankBefore, setFrontTitleRectoBlankBefore] = useState(false);
+  const [bookLayout, setBookLayout] = useState(defaultBookLayoutState);
   const [title, setTitle] = useState("Titre");
   const [author, setAuthor] = useState("Auteur");
   const [publisher, setPublisher] = useState("Edition");
@@ -321,6 +305,25 @@ export default function App() {
   const [showMdPresetEditor, setShowMdPresetEditor] = useState(false);
   const [mdPresetJson, setMdPresetJson] = useState("");
   const [typstPkgUploadName, setTypstPkgUploadName] = useState("");
+
+  const { t } = useI18n();
+
+  const patchBookValues = useCallback((patch: Partial<Record<string, boolean | string>>) => {
+    setBookLayout((prev) => {
+      const nextValues: Record<string, boolean | string> = { ...prev.values };
+      for (const [k, v] of Object.entries(patch)) {
+        if (v !== undefined) nextValues[k] = v;
+      }
+      const sectionOrder = reconcileSectionOrder(prev.sectionOrder, nextValues);
+      return { ...prev, values: nextValues, sectionOrder };
+    });
+  }, []);
+
+  const visibleOptionIds = useMemo(() => {
+    const supported = templateMetaById[selectedTemplate]?.supportedOptions ?? [];
+    const all = BOOK_OPTIONS.map((o) => o.id);
+    return filterOptionIdsByTemplate(all, supported);
+  }, [selectedTemplate, templateMetaById]);
 
   const imageRefs = useMemo(() => extractMarkdownImages(sourceText), [sourceText]);
   const lintIssues = useMemo(() => findInvisibleChars(sourceText), [sourceText]);
@@ -546,11 +549,7 @@ export default function App() {
       settings: {
         moduleA: {
           sourceFormat,
-          includeCoverPage,
-          tocPosition,
-          sectionBreakH1H2,
-          sectionTitleRectoBlankBefore,
-          frontTitleRectoBlankBefore,
+          bookLayout,
           bookFormat,
           templateVars: selectedTemplateObj?.variables ?? {},
           bibliography: true,
@@ -747,28 +746,25 @@ export default function App() {
       compiler.reset();
       compiler.resetShadow();
       await mountTypstPackages(compiler);
+      const defaultsPath = "typeset/typst/shared/book-options-defaults.typ";
+      const defRes = await apiFetch(`${apiBase}/template-source.php?path=${encodeURIComponent(defaultsPath)}`);
+      const defData = await defRes.json();
+      if (defData.ok && defData.source) {
+        compiler.addSource("/typeset/typst/shared/book-options-defaults.typ", String(defData.source));
+      } else {
+        pushLog(`Defaults typ optionnels non charges: ${defData.error ?? "?"}`);
+      }
       compiler.addSource("/template.typ", String(tplData.source));
       compiler.addSource("/content.typ", generatedTypst);
+      const resolvedStrings = resolveDocStrings(bookLayout.documentLang, bookLayout.stringOverrides);
+      const optLines = buildTypstOptsLines(bookLayout, resolvedStrings, {
+        title,
+        author,
+        publisher,
+      });
       compiler.addSource(
         "/main.typ",
-        [
-          `#import "/template.typ": render`,
-          ``,
-          `#{`,
-          `  let opts = (`,
-          `    title: ${JSON.stringify(title)},`,
-          `    author: ${JSON.stringify(author)},`,
-          `    edition: ${JSON.stringify(publisher)},`,
-          `    cover-page: ${includeCoverPage ? "true" : "false"},`,
-          `    section-new-page: ${sectionBreakH1H2 ? "true" : "false"},`,
-          `    section-title-recto-with-blank-before: ${sectionTitleRectoBlankBefore ? "true" : "false"},`,
-          `    front-title-recto-with-blank-before: ${frontTitleRectoBlankBefore ? "true" : "false"},`,
-          `    toc-at-start: ${tocPosition === "start" ? "true" : "false"},`,
-          `    toc-at-end: ${tocPosition === "end" ? "true" : "false"},`,
-          `  )`,
-          `  render(opts)`,
-          `}`,
-        ].join("\n"),
+        [`#import "/template.typ": render`, ``, `#{`, `  let opts = (`, ...optLines, `  )`, `  render(opts)`, `}`].join("\n"),
       );
       pushLog("Main.typ: opts (mise en page = fichier .typ du template uniquement).");
       const compiled = await compiler.runWithWorld(
@@ -974,11 +970,7 @@ export default function App() {
       sourceFormat,
       templateId: selectedTemplate,
       moduleA: {
-        includeCoverPage,
-        tocPosition,
-        sectionBreakH1H2,
-        sectionTitleRectoBlankBefore,
-        frontTitleRectoBlankBefore,
+        bookLayout,
         bookFormat,
         templateVars: selectedTemplateObj?.variables ?? {},
         imageRefs,
@@ -1191,7 +1183,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-header-main">
-          <h1>OBB WASM</h1>
+          <h1>{t("ui.brand")}</h1>
         </div>
         <div className="app-header-auth">
           {!authChecked ? (
@@ -1242,6 +1234,7 @@ export default function App() {
               {colorTheme === "dark" ? <Sun size={18} aria-hidden /> : <Moon size={18} aria-hidden />}
               <span className="sr-only">Basculer theme</span>
             </button>
+            <LanguageSelector />
             <WasmIcon active={wasmReady} />
           </div>
         </div>
@@ -1312,16 +1305,16 @@ export default function App() {
 
       <nav className="tabs" role="tablist" aria-label="Modules">
         <button type="button" role="tab" aria-selected={tab === "contenu"} className={tab === "contenu" ? "active" : ""} onClick={() => setTab("contenu")}>
-          <BookOpen size={18} aria-hidden /> Contenu
+          <BookOpen size={18} aria-hidden /> {t("ui.tabContent")}
         </button>
         <button type="button" role="tab" aria-selected={tab === "couverture"} className={tab === "couverture" ? "active" : ""} onClick={() => setTab("couverture")}>
-          <BookMarked size={18} aria-hidden /> Couverture
+          <BookMarked size={18} aria-hidden /> {t("ui.tabCover")}
         </button>
         <button type="button" role="tab" aria-selected={tab === "imposition"} className={tab === "imposition" ? "active" : ""} onClick={() => setTab("imposition")}>
-          <LayoutGrid size={18} aria-hidden /> Imposition
+          <LayoutGrid size={18} aria-hidden /> {t("ui.tabImposition")}
         </button>
         <button type="button" role="tab" aria-selected={tab === "pdf"} className={tab === "pdf" ? "active" : ""} onClick={() => setTab("pdf")}>
-          <FileText size={18} aria-hidden /> PDF genere
+          <FileText size={18} aria-hidden /> {t("ui.tabPdf")}
         </button>
       </nav>
 
@@ -1397,21 +1390,21 @@ export default function App() {
             <button
               type="button"
               className="btn-with-icon"
-              title={TOOLTIP_MD_TO_TYPST}
+              title={t("ui.tooltipMdToTypst")}
               onClick={() => void convertWithPandocWasm()}
             >
-              <ArrowBigRight size={18} aria-hidden /> Md → Typst
+              <ArrowBigRight size={18} aria-hidden /> {t("ui.mdToTypst")}
             </button>
             <button
               type="button"
               className="btn-with-icon"
-              title={TOOLTIP_COMPILE_PDF}
+              title={t("ui.tooltipCompilePdf")}
               onClick={() => void compileTypstToPdfWasm()}
             >
-              <Printer size={18} aria-hidden /> PDF
+              <Printer size={18} aria-hidden /> {t("ui.pdf")}
             </button>
-            <button type="button" className="btn-with-icon" title="Telecharger le PDF interieur" onClick={downloadGeneratedPdf}>
-              <Download size={16} aria-hidden /> Telecharger
+            <button type="button" className="btn-with-icon" title={t("ui.downloadInterior")} onClick={downloadGeneratedPdf}>
+              <Download size={16} aria-hidden /> {t("ui.download")}
             </button>
             <button type="button" className="btn-with-icon" onClick={() => void exportPrintPack()}>
               <Package size={16} aria-hidden /> Pack
@@ -1491,42 +1484,56 @@ export default function App() {
           )}
 
           <div className="grid">
-            <label>Titre<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-            <label>Auteur<input value={author} onChange={(e) => setAuthor(e.target.value)} /></label>
-            <label>Maison d'edition<input value={publisher} onChange={(e) => setPublisher(e.target.value)} /></label>
             <label>
-              Format source
+              {t("ui.title")}
+              <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            </label>
+            <label>
+              {t("ui.author")}
+              <input value={author} onChange={(e) => setAuthor(e.target.value)} />
+            </label>
+            <label>
+              {t("ui.publisher")}
+              <input value={publisher} onChange={(e) => setPublisher(e.target.value)} />
+            </label>
+            <label>
+              {t("ui.sourceFormat")}
               <select value={sourceFormat} onChange={(e) => setSourceFormat(e.target.value)}>
                 {["docx", "md", "html", "odt", "epub", "latex", "txt", "rtf"].map((f) => (
-                  <option key={f} value={f}>{f}</option>
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
                 ))}
               </select>
             </label>
             <label>
-              Source manuscrit
+              {t("ui.sourceFile")}
               <input type="file" onChange={(e) => e.target.files?.[0] && handleSourceFile(e.target.files[0])} />
             </label>
             <label>
-              Bibliographie (.bib)
+              {t("ui.bibFile")}
               <input type="file" accept=".bib" onChange={(e) => setBibFile(e.target.files?.[0] ?? null)} />
             </label>
           </div>
-          <div className="checks">
-            <ToggleChip enabled={includeCoverPage} onToggle={() => setIncludeCoverPage((v) => !v)} label="Cover page interne" />
-            <ToggleChip enabled={sectionBreakH1H2} onToggle={() => setSectionBreakH1H2((v) => !v)} label="Forcer H1 nouvelle page" />
-            <ToggleChip enabled={sectionTitleRectoBlankBefore} onToggle={() => setSectionTitleRectoBlankBefore((v) => !v)} label="H1 a droite + page vierge avant" />
-            <ToggleChip enabled={frontTitleRectoBlankBefore} onToggle={() => setFrontTitleRectoBlankBefore((v) => !v)} label="Page de titre a droite + page vierge avant" />
-            <label className="inline-field">
-              <span>TOC</span>
-              <select value={tocPosition} onChange={(e) => setTocPosition(e.target.value as "none" | "start" | "end")}>
-                <option value="none">Aucun</option>
-                <option value="start">Debut</option>
-                <option value="end">Fin</option>
-              </select>
-            </label>
-          </div>
+          <section className="subpanel book-layout-panel">
+            <h3>{t("ui.bookOptions")}</h3>
+            <BookOptionsForm
+              visibleOptionIds={visibleOptionIds}
+              bookLayout={bookLayout}
+              setBookLayout={setBookLayout}
+              patchBookValues={patchBookValues}
+            />
+            <h3>{t("ui.sectionOrder")}</h3>
+            <p className="sub">{t("ui.sectionOrderHint")}</p>
+            <SectionOrderList
+              sectionOrder={bookLayout.sectionOrder}
+              onReorder={(next) => setBookLayout((prev) => ({ ...prev, sectionOrder: next }))}
+            />
+          </section>
           <textarea value={sourceText} onChange={(e) => setSourceText(e.target.value)} />
-          <p>Images detectees: {imageRefs.length}</p>
+          <p>
+            {t("ui.imagesDetected")}: {imageRefs.length}
+          </p>
           {lintIssues.length > 0 && <p className="warn">{lintIssues.join(" | ")}</p>}
           {generatedTypst && <textarea readOnly value={generatedTypst} />}
         </section>
@@ -1535,36 +1542,55 @@ export default function App() {
       {tab === "couverture" && (
         <section className="panel">
           <div className="grid">
-            <label>Titre<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-            <label>Auteur<input value={author} onChange={(e) => setAuthor(e.target.value)} /></label>
-            <label>Editeur<input value={publisher} onChange={(e) => setPublisher(e.target.value)} /></label>
             <label>
-              Grammage
+              {t("ui.title")}
+              <input value={title} onChange={(e) => setTitle(e.target.value)} />
+            </label>
+            <label>
+              {t("ui.author")}
+              <input value={author} onChange={(e) => setAuthor(e.target.value)} />
+            </label>
+            <label>
+              {t("ui.editor")}
+              <input value={publisher} onChange={(e) => setPublisher(e.target.value)} />
+            </label>
+            <label>
+              {t("ui.grammage")}
               <select value={grammage} onChange={(e) => setGrammage(Number(e.target.value))}>
                 <option value={80}>80g</option>
                 <option value={100}>100g</option>
                 <option value={120}>120g</option>
               </select>
             </label>
-            <label>Pages interieures<input type="number" value={innerPages} onChange={(e) => setInnerPages(Number(e.target.value))} /></label>
-            <label>Tranche calculee (mm)<input readOnly value={spineThickness} /></label>
             <label>
-              Template couverture
+              {t("ui.innerPages")}
+              <input type="number" value={innerPages} onChange={(e) => setInnerPages(Number(e.target.value))} />
+            </label>
+            <label>
+              {t("ui.spineCalc")}
+              <input readOnly value={spineThickness} />
+            </label>
+            <label>
+              {t("ui.coverTemplate")}
               <select value={selectedCoverTemplatePath} onChange={(e) => setSelectedCoverTemplatePath(e.target.value)}>
-                {coverTemplateChoices.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+                {coverTemplateChoices.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name}
+                  </option>
                 ))}
               </select>
             </label>
           </div>
-          <p>Formule: (NbPages / 2) x EpaisseurFeuille = {spineThickness} mm</p>
+          <p>
+            {t("ui.coverFormula")}: {spineThickness} mm
+          </p>
           <div className="cover-toolbar">
             <label className="cover-toolbar-file">
-              PDF interieur pour comptage
+              {t("ui.pdfInteriorCount")}
               <input type="file" accept="application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfFile(e.target.files[0])} />
             </label>
             <button type="button" className="btn-primary cover-toolbar-generate" onClick={() => void compileCoverTypstToPdfWasm()}>
-              Generer PDF couverture
+              {t("ui.generateCoverPdf")}
             </button>
           </div>
           {coverPreviewUrl ? (
@@ -1579,14 +1605,10 @@ export default function App() {
 
       {tab === "imposition" && (
         <section className="panel">
-          {!IMPOSITION_AUTO_ENABLED && (
-            <p className="muted-banner">
-              L&apos;imposition automatique (calcul serveur) est desactivee pour le moment. Seule la generation PDF via template Typst est disponible.
-            </p>
-          )}
+          {!IMPOSITION_AUTO_ENABLED && <p className="muted-banner">{t("ui.impositionDisabled")}</p>}
           <div className="checks pdf-upload-row">
             <label>
-              PDF interieur (genere dans Contenu ou fichier externe)
+              {t("ui.pdfInterior")}
               <input
                 type="file"
                 accept="application/pdf"
@@ -1595,10 +1617,10 @@ export default function App() {
             </label>
             {pdfFile ? (
               <span className="pdf-pages-hint">
-                {innerPages} page{innerPages > 1 ? "s" : ""} — {pdfFile.name}
+                {innerPages} {t("ui.pagesHint")} — {pdfFile.name}
               </span>
             ) : (
-              <span className="pdf-pages-hint muted">Aucun PDF : generez-en dans Contenu ou chargez un fichier.</span>
+              <span className="pdf-pages-hint muted">{t("ui.noPdfHint")}</span>
             )}
             {previewImgDataUrl ? (
               <img src={previewImgDataUrl} alt="" className="pdf-thumb" width={72} height={96} />
@@ -1606,15 +1628,17 @@ export default function App() {
           </div>
           <div className="grid">
             <label>
-              Template imposition
+              {t("ui.impositionTemplate")}
               <select value={selectedImpositionTemplatePath} onChange={(e) => setSelectedImpositionTemplatePath(e.target.value)}>
-                {impositionTemplateChoices.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+                {impositionTemplateChoices.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name}
+                  </option>
                 ))}
               </select>
             </label>
             <label>
-              Epaisseur papier (mm/feuille)
+              {t("ui.paperThicknessMm")}
               <input
                 type="number"
                 step="0.01"
@@ -1626,11 +1650,11 @@ export default function App() {
           </div>
           <div className="info">
             <button type="button" className="btn-primary" onClick={() => void compileImpositionTypstToPdfWasm()}>
-              Generer PDF imposition
+              {t("ui.generateImpositionPdf")}
             </button>
             {impositionPreviewUrl && (
               <a href={impositionPreviewUrl} download={impositionPdfName || "imposition-output.pdf"}>
-                Telecharger {impositionPdfName || "imposition-output.pdf"}
+                {t("ui.downloadPair")} {impositionPdfName || "imposition-output.pdf"}
               </a>
             )}
           </div>
@@ -1641,7 +1665,7 @@ export default function App() {
       {tab === "pdf" && (
         <section className="panel">
           {!previewUrl ? (
-            <p>Aucun PDF genere pour le moment. Compilez depuis l&apos;onglet Contenu ou chargez un PDF depuis Couverture / Imposition.</p>
+            <p>{t("ui.pdfTabEmpty")}</p>
           ) : (
             <PdfPageViewer
               file={pdfFile}
@@ -1662,12 +1686,15 @@ export default function App() {
           onKeyDown={(e) => e.key === "Escape" && setTemplatePreviewId(null)}
         >
           <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-            <h2 id="tpl-preview-title">Apercu gabarit</h2>
+            <h2 id="tpl-preview-title">{t("ui.modalTemplatePreview")}</h2>
             {(() => {
-              const t = templates.find((x) => x.id === templatePreviewId);
-              if (!t) return <p>Gabarit introuvable.</p>;
-              const m = templateMetaById[t.id];
-              const title = displayTitle(m ?? { nomComplet: "", version: "", detail: "", format: "" }, t.name);
+              const tpl = templates.find((x) => x.id === templatePreviewId);
+              if (!tpl) return <p>{t("ui.templateNotFound")}</p>;
+              const m = templateMetaById[tpl.id];
+              const title = displayTitle(
+                m ?? { nomComplet: "", version: "", detail: "", format: "", supportedOptions: [] },
+                tpl.name,
+              );
               return (
                 <>
                   <p className="modal-title-text">{title}</p>
@@ -1675,25 +1702,30 @@ export default function App() {
                   <ul className="modal-meta-list">
                     {m?.format ? (
                       <li>
-                        <strong>Format</strong> : {m.format}
+                        <strong>{t("ui.format")}</strong> : {m.format}
                       </li>
                     ) : null}
                     {m?.version ? (
                       <li>
-                        <strong>Version</strong> : {m.version}
+                        <strong>{t("ui.version")}</strong> : {m.version}
                       </li>
                     ) : null}
                     <li>
-                      <strong>Fichier</strong> : {t.mainTypPath}
+                      <strong>{t("ui.file")}</strong> : {tpl.mainTypPath}
                     </li>
+                    {m?.supportedOptions && m.supportedOptions.length > 0 ? (
+                      <li>
+                        <strong>supported-options</strong> : {m.supportedOptions.join(", ")}
+                      </li>
+                    ) : null}
                   </ul>
-                  <p className="sub">Variables (JSON template)</p>
-                  <pre className="modal-pre">{JSON.stringify(t.variables, null, 2)}</pre>
+                  <p className="sub">{t("ui.variablesJson")}</p>
+                  <pre className="modal-pre">{JSON.stringify(tpl.variables, null, 2)}</pre>
                 </>
               );
             })()}
             <button type="button" className="btn-primary modal-close" onClick={() => setTemplatePreviewId(null)}>
-              Fermer
+              {t("ui.close")}
             </button>
           </div>
         </div>

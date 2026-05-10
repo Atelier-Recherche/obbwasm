@@ -3,6 +3,7 @@
 // version: v1.0
 // detail: Modèle de mise en page pour un livre format B5 (143.5mm x 210mm), police Times.
 // format: brsnoba5-times
+// supported-options: cover-page, half-title-page, title-page, toc-position, section-new-page, auto-heading-numbering
 // @obbwasm-meta end
 //
 // Gabarit autonome — équivalent cible : Times-brsnoba5-layout.typ

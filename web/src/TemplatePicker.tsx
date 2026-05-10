@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Eye, Loader2 } from "lucide-react";
 import type { TemplateMeta } from "./parseTemplateMeta";
-import { displayTitle } from "./parseTemplateMeta";
+import { displayTitle, supportedOptionsBadgeCounts } from "./parseTemplateMeta";
 
 export type TemplateItem = {
   id: string;
@@ -46,7 +46,7 @@ export function TemplatePicker({
   const selected = templates.find((t) => t.id === selectedId);
   const metaSel = selected ? metaById[selected.id] : undefined;
   const summary = selected
-    ? displayTitle(metaSel ?? { nomComplet: "", version: "", detail: "", format: "" }, selected.name)
+    ? displayTitle(metaSel ?? { nomComplet: "", version: "", detail: "", format: "", supportedOptions: [] }, selected.name)
     : "Choisir un gabarit";
 
   function handleToggle() {
@@ -73,7 +73,8 @@ export function TemplatePicker({
           <ul className="template-picker-grid">
             {templates.map((t) => {
               const m = metaById[t.id];
-              const title = displayTitle(m ?? { nomComplet: "", version: "", detail: "", format: "" }, t.name);
+              const title = displayTitle(m ?? { nomComplet: "", version: "", detail: "", format: "", supportedOptions: [] }, t.name);
+              const badge = supportedOptionsBadgeCounts(m);
               const active = t.id === selectedId;
               return (
                 <li key={t.id}>
@@ -88,7 +89,12 @@ export function TemplatePicker({
                         setOpen(false);
                       }}
                     >
-                      <span className="template-card-title">{title}</span>
+                      <span className="template-card-title-row">
+                        <span className="template-card-title">{title}</span>
+                        <span className="template-option-badge" title={`${badge.supported}/${badge.total}`}>
+                          {badge.supported}/{badge.total}
+                        </span>
+                      </span>
                       {m?.detail ? <span className="template-card-detail">{m.detail}</span> : null}
                       <span className="template-card-tags">
                         {m?.format ? <span className="tag tag-format">{m.format}</span> : null}

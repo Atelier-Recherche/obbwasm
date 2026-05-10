@@ -1,3 +1,5 @@
+import { BOOK_OPTION_BY_ID, BOOK_OPTIONS } from "./bookOptions/registry";
+
 /** Bloc commenté en tête des .typ — parsé sans exécuter Typst. */
 
 export type TemplateMeta = {
@@ -5,6 +7,8 @@ export type TemplateMeta = {
   version: string;
   detail: string;
   format: string;
+  /** Identifiants d’options supportées par le gabarit (vide = tout le registre affiché). */
+  supportedOptions: string[];
 };
 
 const EMPTY: TemplateMeta = {
@@ -12,6 +16,7 @@ const EMPTY: TemplateMeta = {
   version: "",
   detail: "",
   format: "",
+  supportedOptions: [],
 };
 
 /**
@@ -21,6 +26,7 @@ const EMPTY: TemplateMeta = {
  * // version: v1.0
  * // detail: ...
  * // format: slug
+ * // supported-options: cover-page, toc-position, …
  * // @obbwasm-meta end
  */
 export function parseTemplateMeta(source: string): TemplateMeta {
@@ -44,10 +50,50 @@ export function parseTemplateMeta(source: string): TemplateMeta {
     else if (key === "version") out.version = val;
     else if (key === "detail") out.detail = val;
     else if (key === "format") out.format = val;
+    else if (key === "supported-options") {
+      out.supportedOptions = val
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
   }
   return out;
 }
 
+/** Mot-clé réservé dans `supported-options: none` → aucune option livre dans l’UI. */
+const SUPPORTED_OPTIONS_NONE = "none";
+
+export function filterOptionIdsByTemplate(allIds: string[], supportedOptions: string[]): string[] {
+  if (
+    supportedOptions.length === 1 &&
+    supportedOptions[0].toLowerCase() === SUPPORTED_OPTIONS_NONE
+  ) {
+    return [];
+  }
+  if (supportedOptions.length === 0) return allIds;
+  const allow = new Set(supportedOptions);
+  return allIds.filter((id) => allow.has(id));
+}
+
 export function displayTitle(meta: TemplateMeta, fallbackName: string): string {
   return meta.nomComplet.trim() || fallbackName;
+}
+
+/**
+ * Compte pour pastille « X / Y » : Y = taille du registre ;
+ * X = nombre d’options déclarées dans le gabarit (ids valides), ou tout le registre si la ligne est absente / vide.
+ */
+export function supportedOptionsBadgeCounts(meta: TemplateMeta | undefined): { supported: number; total: number } {
+  const total = BOOK_OPTIONS.length;
+  if (!meta || meta.supportedOptions.length === 0) {
+    return { supported: total, total };
+  }
+  if (
+    meta.supportedOptions.length === 1 &&
+    meta.supportedOptions[0].toLowerCase() === SUPPORTED_OPTIONS_NONE
+  ) {
+    return { supported: 0, total };
+  }
+  const valid = meta.supportedOptions.filter((id) => id in BOOK_OPTION_BY_ID);
+  return { supported: valid.length, total };
 }
