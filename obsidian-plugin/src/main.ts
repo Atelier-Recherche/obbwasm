@@ -9,11 +9,17 @@ import {
   mountTypstPackagesFromLoader,
   overrideTypstLet,
   pandocMarkdownToTypst,
+  markdownHorizontalRuleFromBookValues,
+  normalizeWikiImagesForPandoc,
   parseImpositionTemplateSpec,
+  parseTemplateMeta,
+  applyTocAndBibPlacement,
+  reconcileSectionOrder,
   reorderSpreadSequence,
   resetTypstWasmImporterRegistration,
   spineThicknessMm,
   type BookLayoutState,
+  type TemplateMeta,
 } from "@obbwasm/core";
 import type { TypstCompiler } from "@myriaddreamin/typst.ts";
 import JSZip from "jszip";
@@ -28,8 +34,12 @@ import {
   requestUrl,
   type App,
   type FileSystemAdapter,
+  type TFile,
 } from "obsidian";
+import { mountBookOptionsPanel, mountSectionOrderPanel } from "./bookOptionsPanel.js";
 import { createFsAssetLoader } from "./fsAssetLoader.js";
+import { EMBEDDED_TEMPLATES_MANIFEST } from "./embeddedTemplatesManifest.js";
+import frLocale from "./locales/fr.json";
 import { extractTypesetFromGithubRepoZip } from "./githubArchive.js";
 import { listTypFiles } from "./listTypFiles.js";
 import { nodeFs, nodePath } from "./platform.js";
@@ -49,6 +59,116 @@ function validateWasmPath(fs: typeof import("node:fs"), absPath: string, label: 
   if (st.size === 0) throw new Error(`${label}: fichier vide (0 octet) : ${p}`);
 }
 
+const RX_MD_IMG = /!\[[^\]]*]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+const RX_WIKI_IMG = /!\[\[([^[\]]+)\]\]/g;
+
+function extractMarkdownImageRefs(source: string): string[] {
+  const out = new Set<string>();
+  for (const rx of [RX_MD_IMG, RX_WIKI_IMG]) {
+    rx.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = rx.exec(source)) !== null) {
+      const raw = (m[1] ?? "").trim();
+      if (!raw) continue;
+      const noAlias = raw.split("|")[0]?.trim() ?? raw;
+      const noAnchor = noAlias.split("#")[0]?.trim() ?? noAlias;
+      if (noAnchor) out.add(noAnchor);
+    }
+  }
+  return [...out];
+}
+
+function uniqueNormalizedPaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of paths) {
+    const n = normalizePath(p);
+    if (seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
+
+/**
+ * Résout une image locale comme le ferait Obsidian : d’abord relatif au dossier de la note,
+ * puis chemin depuis la racine du coffre (évite Brochure/Brochure/… si la note est déjà sous Brochure),
+ * puis lien implicite, puis fichier du même nom dans un sous-dossier direct (ex. imagetelechargement/logo.png).
+ */
+function resolveLocalImageToFile(app: App, sourceFile: TFile, refRaw: string): TFile | null {
+  const normRef = normalizePath(refRaw.trim().replace(/^\.\//, ""));
+  if (!normRef) return null;
+
+  const candidates = uniqueNormalizedPaths(
+    sourceFile.parent
+      ? [normalizePath(`${sourceFile.parent.path}/${normRef}`), normRef]
+      : [normRef],
+  );
+
+  for (const c of candidates) {
+    const af = app.vault.getAbstractFileByPath(c);
+    if (af && "extension" in af) return af as TFile;
+  }
+
+  const dest = app.metadataCache.getFirstLinkpathDest(refRaw.trim(), sourceFile.path);
+  if (dest && "extension" in dest) return dest as TFile;
+
+  if (!normRef.includes("/") && sourceFile.parent) {
+    for (const child of sourceFile.parent.children) {
+      if (!("children" in child)) continue;
+      const subPath = normalizePath(`${child.path}/${normRef}`);
+      const af = app.vault.getAbstractFileByPath(subPath);
+      if (af && "extension" in af) return af as TFile;
+    }
+  }
+
+  return null;
+}
+
+/** En-têtes adaptés aux images distantes (Referer = origine du site, utile WordPress / anti-hotlink). */
+function httpHeadersForImageRequest(url: string): Record<string, string> {
+  const h: Record<string, string> = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+  };
+  try {
+    h.Referer = `${new URL(url).origin}/`;
+  } catch {
+    /* ignore */
+  }
+  return h;
+}
+
+/**
+ * `fetch` compatible pour {@link createTypstCompiler} : charge les polices typst-assets (jsDelivr)
+ * sans `import("node-fetch-cache")` (cassé sous Obsidian / Electron).
+ */
+async function typstFontFetcherObsidian(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : typeof (input as Request).url === "string"
+          ? (input as Request).url
+          : String(input);
+  const res = await requestUrl({
+    url,
+    method: "GET",
+    throw: false,
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; ObbWasm-Obsidian/1)",
+      Accept: "*/*",
+      ...(init?.headers as Record<string, string> | undefined),
+    },
+  });
+  if (res.status !== 200 || res.arrayBuffer == null) {
+    throw new Error(`Téléchargement police HTTP ${res.status} : ${url.slice(0, 120)}`);
+  }
+  return new Response(res.arrayBuffer, { status: res.status });
+}
+
 interface ObbWasmPluginSettings {
   pandocWasmPath: string;
   typstWasmPath: string;
@@ -63,6 +183,16 @@ interface ObbWasmPluginSettings {
   impositionPaperThicknessMm: number;
   selectedCoverTemplatePath: string;
   selectedImpositionTemplatePath: string;
+  /** Console : journal Pandoc / médias / virtualisation Typst. */
+  debugMedia: boolean;
+  /** Chemin coffre vers un fichier .bib (Pandoc citeproc). */
+  bibliographyVaultPath: string;
+  /** Chemin coffre vers un style CSL (utilisé seulement si le .bib est chargé). */
+  cslVaultPath: string;
+  /** Note « glossaire » : sections `# entrée` + définition (`[[glossaire#entrée]]`). */
+  glossaryVaultPath: string;
+  /** Note « index » des noms : sections `# entrée` + notice (`[[index#entrée]]`). */
+  nameIndexVaultPath: string;
 }
 
 const DEFAULT_SETTINGS: ObbWasmPluginSettings = {
@@ -79,6 +209,11 @@ const DEFAULT_SETTINGS: ObbWasmPluginSettings = {
   impositionPaperThicknessMm: 0.1,
   selectedCoverTemplatePath: "",
   selectedImpositionTemplatePath: "",
+  debugMedia: false,
+  bibliographyVaultPath: "",
+  cslVaultPath: "",
+  glossaryVaultPath: "",
+  nameIndexVaultPath: "",
 };
 
 export default class ObbWasmBookPlugin extends Plugin {
@@ -86,12 +221,15 @@ export default class ObbWasmBookPlugin extends Plugin {
   typstCompiler: TypstCompiler | null = null;
   pandocConvert: Awaited<ReturnType<typeof createPandocConvertFromWasmBuffer>> | null = null;
   cachedManifest: TemplatesManifestV1 | null = null;
+  /** Métadonnées du gabarit `.typ` (supported-options) pour le formulaire d’options. */
+  templateMeta: TemplateMeta | null = null;
   /** Dernier PDF intérieur produit par « Compiler la note » — utilisé pour l’imposition. */
   lastInteriorPdf: Uint8Array | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    await this.loadLocalManifest();
+    this.resolveTemplatesManifest();
+    await this.refreshTemplateMeta();
     this.registerView(VIEW_TYPE_OBB, (leaf) => new ObbBookView(leaf, this));
     this.addRibbonIcon("book-open", "OBB livre PDF", () => void this.activateView());
     this.addCommand({
@@ -206,21 +344,48 @@ export default class ObbWasmBookPlugin extends Plugin {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   }
 
-  /** Met à jour cachedManifest depuis le fichier cache (sync), utile à l’ouverture des réglages. */
-  hydrateManifestFromDisk(): void {
+  /**
+   * Manifest pour la liste des gabarits : fichier cache dans le dossier plugin,
+   * sinon copie embarquée (évite liste vide si le JSON distant est indisponible).
+   */
+  resolveTemplatesManifest(): TemplatesManifestV1 {
     const fs = nodeFs();
     const path = nodePath();
     const cached = path.join(this.pluginDir(), "templates-manifest.cached.json");
-    if (!fs.existsSync(cached)) return;
-    try {
-      const raw = fs.readFileSync(cached, "utf8");
-      const json = JSON.parse(raw) as TemplatesManifestV1;
-      if (json.version === 1 && Array.isArray(json.templates)) {
-        this.cachedManifest = json;
+    if (fs.existsSync(cached)) {
+      try {
+        const raw = fs.readFileSync(cached, "utf8");
+        const json = JSON.parse(raw) as TemplatesManifestV1;
+        if (json.version === 1 && Array.isArray(json.templates) && json.templates.length > 0) {
+          this.cachedManifest = json;
+          return json;
+        }
+      } catch {
+        /* fallback embarqué */
       }
-    } catch {
-      /* ignore */
     }
+    this.cachedManifest = EMBEDDED_TEMPLATES_MANIFEST;
+    return EMBEDDED_TEMPLATES_MANIFEST;
+  }
+
+  /** Lit le `.typ` du gabarit sélectionné pour savoir quelles options afficher. */
+  async refreshTemplateMeta(): Promise<void> {
+    const manifest = this.resolveTemplatesManifest();
+    const tpls = manifest.templates;
+    const id = this.settings.selectedTemplateId || tpls[0]?.id || "";
+    const rec = tpls.find((x) => x.id === id) ?? tpls[0];
+    if (!rec?.mainTypPath) {
+      this.templateMeta = null;
+      return;
+    }
+    const loader = createFsAssetLoader(this.resolveTemplatesRoot());
+    const src = await loader.fetchTextFile(rec.mainTypPath);
+    this.templateMeta = src ? parseTemplateMeta(src) : null;
+  }
+
+  /** Met à jour cachedManifest — alias pour les réglages / rafraîchissement UI. */
+  hydrateManifestFromDisk(): void {
+    this.resolveTemplatesManifest();
   }
 
   async ensurePandocConvert(): Promise<Awaited<ReturnType<typeof createPandocConvertFromWasmBuffer>>> {
@@ -242,6 +407,10 @@ export default class ObbWasmBookPlugin extends Plugin {
     const compiler = await createTypstCompiler({
       getTypstWasmBuffer: async () => this.readWasmFile(p, "Typst wasm"),
       loader,
+      loadFontsOptions: {
+        assets: ["text"],
+        fetcher: typstFontFetcherObsidian,
+      },
     });
     this.typstCompiler = compiler;
     return compiler;
@@ -250,7 +419,16 @@ export default class ObbWasmBookPlugin extends Plugin {
   parseBookLayout(): BookLayoutState {
     try {
       const j = JSON.parse(this.settings.bookLayoutJson || "{}") as BookLayoutState;
-      return j?.values ? j : defaultBookLayoutState();
+      if (!j?.values) return defaultBookLayoutState();
+      const def = defaultBookLayoutState();
+      const values = { ...def.values, ...j.values };
+      return {
+        ...def,
+        ...j,
+        values,
+        stringOverrides: { ...def.stringOverrides, ...(j.stringOverrides ?? {}) },
+        sectionOrder: reconcileSectionOrder(j.sectionOrder ?? def.sectionOrder, values),
+      };
     } catch {
       return defaultBookLayoutState();
     }
@@ -277,22 +455,8 @@ export default class ObbWasmBookPlugin extends Plugin {
     }
   }
 
-  async loadLocalManifest(): Promise<TemplatesManifestV1 | null> {
-    const fs = nodeFs();
-    const path = nodePath();
-    const cached = path.join(this.pluginDir(), "templates-manifest.cached.json");
-    if (!fs.existsSync(cached)) return this.cachedManifest;
-    try {
-      const raw = fs.readFileSync(cached, "utf8");
-      const json = JSON.parse(raw) as TemplatesManifestV1;
-      if (json.version === 1 && Array.isArray(json.templates)) {
-        this.cachedManifest = json;
-        return json;
-      }
-    } catch {
-      /* ignore */
-    }
-    return this.cachedManifest;
+  async loadLocalManifest(): Promise<TemplatesManifestV1> {
+    return this.resolveTemplatesManifest();
   }
 
   async downloadWasm(destAbs: string, url: string): Promise<void> {
@@ -315,27 +479,9 @@ export default class ObbWasmBookPlugin extends Plugin {
     const path = nodePath();
     let zipUrl = GITHUB_REPO_ARCHIVE_MAIN;
 
-    const manRes = await requestUrl({
-      url: DEFAULT_TEMPLATES_MANIFEST_URL,
-      method: "GET",
-      throw: false,
-    });
-    if (manRes.status === 200 && manRes.text) {
-      try {
-        const json = JSON.parse(manRes.text) as TemplatesManifestV1;
-        if (json.version === 1 && Array.isArray(json.templates)) {
-          this.cachedManifest = json;
-          fs.writeFileSync(
-            path.join(this.pluginDir(), "templates-manifest.cached.json"),
-            manRes.text,
-            "utf8",
-          );
-          if (json.bundleZipUrl?.trim()) zipUrl = json.bundleZipUrl.trim();
-        }
-      } catch {
-        /* manifest invalide → ZIP par défaut */
-      }
-    }
+    const remote = await this.fetchManifestFromRepo();
+    const gotRemoteManifest = remote !== null;
+    if (remote?.bundleZipUrl?.trim()) zipUrl = remote.bundleZipUrl.trim();
 
     const zipRes = await requestUrl({ url: zipUrl, method: "GET", throw: false });
     if (zipRes.status !== 200) {
@@ -348,12 +494,158 @@ export default class ObbWasmBookPlugin extends Plugin {
     const n = await extractTypesetFromGithubRepoZip(zip, root, fs, path);
     if (n === 0) {
       throw new Error(
-        "Aucun dossier typeset/ reconnu dans le ZIP — vérifiez l’URL ou le dépôt.",
+        "Aucun dossier typeset/typst/ reconnu dans le ZIP — vérifiez le dépôt.",
       );
     }
+
+    const legacyOldlatex = path.join(root, "typeset", "oldlatex");
+    if (fs.existsSync(legacyOldlatex)) {
+      fs.rmSync(legacyOldlatex, { recursive: true, force: true });
+    }
+
+    if (!gotRemoteManifest) {
+      const snap = JSON.stringify(EMBEDDED_TEMPLATES_MANIFEST, null, 2);
+      fs.writeFileSync(path.join(this.pluginDir(), "templates-manifest.cached.json"), snap, "utf8");
+      this.cachedManifest = EMBEDDED_TEMPLATES_MANIFEST;
+    }
+
     this.typstCompiler = null;
     await this.ensureCoverImpositionDefaults();
-    new Notice(`Gabarits installés (${n} fichiers).`);
+    await this.refreshTemplateMeta();
+    new Notice(`Gabarits installés (${n} fichiers Typst).`);
+  }
+
+  /**
+   * Ajoute les images référencées dans la note en tant que fichiers d’entrée Pandoc.
+   * Cela permet à Pandoc de générer des `mediaFiles` que Typst pourra ensuite résoudre.
+   */
+  async collectPandocImageFiles(file: TFile, markdown: string): Promise<Record<string, Blob>> {
+    const refs = extractMarkdownImageRefs(markdown);
+    if (!refs.length) return {};
+    const out: Record<string, Blob> = {};
+    for (const refRaw of refs) {
+      const ref = decodeURIComponent(refRaw.trim());
+      if (!ref || /^data:/i.test(ref) || /^\/\//.test(ref)) continue;
+      if (/^https?:\/\//i.test(ref)) {
+        try {
+          const res = await requestUrl({
+            url: ref.trim(),
+            method: "GET",
+            throw: false,
+            headers: httpHeadersForImageRequest(ref.trim()),
+          });
+          if (res.status !== 200 || !res.arrayBuffer) continue;
+          const blob = new Blob([new Uint8Array(res.arrayBuffer)]);
+          const keys = new Set<string>([ref, refRaw.trim(), refRaw]);
+          const tail = ref.split("/").pop()?.split("?")[0];
+          if (tail) {
+            keys.add(tail);
+            keys.add(`media/${tail}`);
+          }
+          for (const k of keys) out[k] = blob;
+        } catch {
+          /* distant inaccessible */
+        }
+        continue;
+      }
+      const hit = resolveLocalImageToFile(this.app, file, refRaw.trim());
+      if (!hit) continue;
+      try {
+        const bin = await this.app.vault.adapter.readBinary(hit.path);
+        const blob = new Blob([bin]);
+        const normRef = normalizePath(ref.replace(/^\.\//, ""));
+        const keys = new Set<string>([
+          hit.path,
+          normalizePath(hit.path),
+          ref,
+          refRaw.trim(),
+          refRaw,
+          normRef,
+          hit.name,
+          `media/${hit.name}`,
+        ]);
+        if (file.parent?.path) {
+          const base = file.parent.path;
+          const joined = normalizePath(`${base}/${normRef}`);
+          const alreadyUnderParent =
+            normRef === base || normRef.startsWith(`${base}/`);
+          if (!alreadyUnderParent) keys.add(joined);
+        }
+        const tail = hit.path.split("/").pop();
+        if (tail) {
+          keys.add(tail);
+          keys.add(`media/${tail}`);
+        }
+        for (const k of keys) out[k] = blob;
+      } catch {
+        /* image illisible: on ignore */
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Charge un .bib (et optionnellement un .csl) depuis des chemins relatifs à la racine du coffre.
+   * Noms virtuels stables pour le VFS Pandoc.
+   */
+  /** Lit un fichier texte du coffre (chemins relatifs). */
+  async readVaultTextRelative(vaultRelativePath: string): Promise<string | null> {
+    const p = vaultRelativePath?.trim();
+    if (!p) return null;
+    const norm = normalizePath(p);
+    const af = this.app.vault.getAbstractFileByPath(norm);
+    if (!af || !("extension" in af)) return null;
+    const tf = af as TFile;
+    try {
+      return await this.app.vault.read(tf);
+    } catch {
+      return null;
+    }
+  }
+
+  async resolveBibliographyForPandoc(): Promise<{
+    bibliography: { name: string; blob: Blob } | null;
+    csl: { name: string; blob: Blob } | null;
+  }> {
+    const PANDOC_BIB = "obb-refs.bib";
+    const PANDOC_CSL = "obb-style.csl";
+    let bibliography: { name: string; blob: Blob } | null = null;
+    let csl: { name: string; blob: Blob } | null = null;
+    const bibPath = this.settings.bibliographyVaultPath?.trim();
+    if (bibPath) {
+      const norm = normalizePath(bibPath);
+      const af = this.app.vault.getAbstractFileByPath(norm);
+      if (af && "extension" in af) {
+        const tf = af as TFile;
+        if (tf.extension.toLowerCase() === "bib") {
+          try {
+            const bin = await this.app.vault.adapter.readBinary(tf.path);
+            bibliography = { name: PANDOC_BIB, blob: new Blob([bin]) };
+          } catch {
+            /* fichier illisible */
+          }
+        }
+      }
+    }
+    if (bibliography) {
+      const cslPath = this.settings.cslVaultPath?.trim();
+      if (cslPath) {
+        const norm = normalizePath(cslPath);
+        const af = this.app.vault.getAbstractFileByPath(norm);
+        if (af && "extension" in af) {
+          const tf = af as TFile;
+          if (tf.extension.toLowerCase() === "csl") {
+            try {
+              const bin = await this.app.vault.adapter.readBinary(tf.path);
+              csl = { name: PANDOC_CSL, blob: new Blob([bin]) };
+            } catch {
+              /* */
+            }
+          }
+        }
+      }
+    }
+    return { bibliography, csl };
   }
 
   async compileActiveNoteToPdf(): Promise<{ pdf: Uint8Array; fileBase: string; folder: string }> {
@@ -361,14 +653,28 @@ export default class ObbWasmBookPlugin extends Plugin {
     if (!file) throw new Error("Aucun fichier actif.");
     const text = await this.app.vault.read(file);
     const convert = await this.ensurePandocConvert();
-    const { typst } = await pandocMarkdownToTypst({
+    const normalizedMd = normalizeWikiImagesForPandoc(text);
+    const extraFiles = await this.collectPandocImageFiles(file, normalizedMd);
+    const mediaDebugLog = this.settings.debugMedia ? [] as string[] : undefined;
+    const bookLayout = this.parseBookLayout();
+    const { bibliography, csl } = await this.resolveBibliographyForPandoc();
+    const glossaryMarkdown = await this.readVaultTextRelative(this.settings.glossaryVaultPath);
+    const nameIndexMarkdown = await this.readVaultTextRelative(this.settings.nameIndexVaultPath);
+    const { typst, stderr, mediaFiles } = await pandocMarkdownToTypst({
       convert,
       sourceFormat: "md",
       sourceText: text,
       titleFallback: this.settings.title || file.basename,
+      extraFiles,
+      bibliography,
+      csl,
+      markdownHorizontalRule: markdownHorizontalRuleFromBookValues(bookLayout.values),
     });
+    mediaDebugLog?.push(`[pandoc] stderr (${stderr.length} car.) : ${stderr.slice(0, 600)}`);
+    mediaDebugLog?.push(`[pandoc] mediaFiles (${Object.keys(mediaFiles).length}) : ${Object.keys(mediaFiles).join(", ") || "(vide)"}`);
+    mediaDebugLog?.push(`[typst brut] ${typst.match(/image\s*\(/g)?.length ?? 0} appel(s) image(`);
 
-    const manifest = (await this.loadLocalManifest()) ?? (await this.fetchManifestFromRepo());
+    const manifest = this.resolveTemplatesManifest();
     const templates = manifest?.templates ?? [];
     const sel =
       templates.find((t) => t.id === this.settings.selectedTemplateId) ??
@@ -381,7 +687,6 @@ export default class ObbWasmBookPlugin extends Plugin {
     if (!tplSrc) throw new Error(`Template introuvable dans le bundle : ${sel.mainTypPath}`);
 
     const compiler = await this.ensureTypstCompiler();
-    const bookLayout = this.parseBookLayout();
     const out = await compileTypstBookToPdf({
       compiler,
       loader,
@@ -393,7 +698,30 @@ export default class ObbWasmBookPlugin extends Plugin {
         author: this.settings.author,
         publisher: this.settings.publisher,
       },
+      pandocConvert: convert,
+      glossaryMarkdown: glossaryMarkdown ?? undefined,
+      nameIndexMarkdown: nameIndexMarkdown ?? undefined,
+      mediaFiles,
+      mediaDebugLog,
+      fetchRemoteBytes: async (url: string) => {
+        try {
+          const res = await requestUrl({
+            url,
+            method: "GET",
+            throw: false,
+            headers: httpHeadersForImageRequest(url),
+          });
+          mediaDebugLog?.push(`[http] ${url.slice(0, 100)} → status ${res.status}`);
+          if (res.status !== 200 || !res.arrayBuffer) return null;
+          return new Uint8Array(res.arrayBuffer);
+        } catch {
+          return null;
+        }
+      },
     });
+    if (mediaDebugLog?.length) {
+      console.info(`[obbwasm médias]\n${mediaDebugLog.join("\n")}`);
+    }
     if (!out.pdf) {
       const msg = JSON.stringify(out.diagnostics ?? []);
       throw new Error(`Compilation sans PDF. ${msg.slice(0, 400)}`);
@@ -504,7 +832,13 @@ export default class ObbWasmBookPlugin extends Plugin {
     const dest = normalizePath(folder ? `${folder}/${base}${suffix}.pdf` : `${base}${suffix}.pdf`);
     const outBin = new Uint8Array(pdf.byteLength);
     outBin.set(pdf);
-    await this.app.vault.adapter.writeBinary(dest, outBin.buffer);
+    const buf = outBin.buffer.slice(outBin.byteOffset, outBin.byteOffset + outBin.byteLength);
+    const existing = this.app.vault.getAbstractFileByPath(dest);
+    if (existing && "extension" in existing) {
+      await this.app.vault.modifyBinary(existing as TFile, buf);
+    } else {
+      await this.app.vault.createBinary(dest, buf);
+    }
     return dest;
   }
 
@@ -542,6 +876,12 @@ class ObbBookView extends ItemView {
   private statusEl!: HTMLDivElement;
   private spineHintEl!: HTMLSpanElement;
   private innerPagesInput!: HTMLInputElement;
+  private bookOptsRoot!: HTMLElement;
+  private sectionOrderRoot!: HTMLElement;
+  /** Sections repliables des options livre (persistant lors des reconstructions). */
+  private bookOptSectionOpen: Partial<Record<string, boolean>> = {};
+  /** Dernière URL blob de l’aperçu PDF — révoquée avec délai pour éviter un crash iframe. */
+  private previewBlobUrl: string | null = null;
 
   private bindMeta(input: HTMLInputElement, key: "title" | "author" | "publisher"): void {
     input.value = this.plugin.settings[key];
@@ -558,13 +898,56 @@ class ObbBookView extends ItemView {
 
   private showPdfPreview(data: Uint8Array): void {
     const blob = new Blob([new Uint8Array(data)], { type: "application/pdf" });
-    const prev = this.frame.src;
-    if (prev.startsWith("blob:")) URL.revokeObjectURL(prev);
-    this.frame.src = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
+    const previous = this.previewBlobUrl;
+    this.previewBlobUrl = url;
+    this.frame.src = url;
+    if (previous?.startsWith("blob:")) {
+      window.setTimeout(() => URL.revokeObjectURL(previous), 750);
+    }
+  }
+
+  private async patchBookValues(patch: Partial<Record<string, boolean | string>>): Promise<void> {
+    const layout = this.plugin.parseBookLayout();
+    const nextValues: Record<string, boolean | string> = { ...layout.values };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v !== undefined) nextValues[k] = v;
+    }
+    let sectionOrder = reconcileSectionOrder(layout.sectionOrder, nextValues);
+    if (patch["toc-position"] !== undefined || patch["bibliography-position"] !== undefined) {
+      sectionOrder = applyTocAndBibPlacement(sectionOrder, nextValues);
+    }
+    this.plugin.settings.bookLayoutJson = JSON.stringify({
+      ...layout,
+      values: nextValues,
+      sectionOrder,
+    });
+    await this.plugin.saveSettings();
+    await this.rebuildBookOptionsUI();
+  }
+
+  private async rebuildBookOptionsUI(): Promise<void> {
+    if (!this.bookOptsRoot || !this.sectionOrderRoot) return;
+    mountBookOptionsPanel(this.bookOptsRoot, {
+      fr: frLocale,
+      templateMeta: this.plugin.templateMeta,
+      openSections: this.bookOptSectionOpen,
+      getLayout: () => this.plugin.parseBookLayout(),
+      setLayout: async (next) => {
+        this.plugin.settings.bookLayoutJson = JSON.stringify(next);
+        await this.plugin.saveSettings();
+      },
+      patchValues: (p) => this.patchBookValues(p),
+    });
+    mountSectionOrderPanel(this.sectionOrderRoot, frLocale, () => this.plugin.parseBookLayout(), async (next) => {
+      this.plugin.settings.bookLayoutJson = JSON.stringify(next);
+      await this.plugin.saveSettings();
+    });
   }
 
   async onOpen(): Promise<void> {
-    await this.plugin.loadLocalManifest();
+    this.plugin.resolveTemplatesManifest();
+    await this.plugin.refreshTemplateMeta();
     const container = this.contentEl;
     container.empty();
     container.addClass("obbwasm-view");
@@ -578,6 +961,27 @@ class ObbBookView extends ItemView {
     this.bindMeta(a, "author");
     const p = this.labeledText(meta, "Éditeur / édition");
     this.bindMeta(p, "publisher");
+
+    scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Citations (Pandoc)" });
+    const citeSec = scroll.createDiv({ cls: "obbwasm-section" });
+    citeSec.createEl("p", {
+      cls: "obbwasm-help-text",
+      text: "Chemins relatifs à la racine du coffre. Le style CSL n’est utilisé que si le fichier .bib est trouvé.",
+    });
+    const bibPathInput = this.labeledText(citeSec, "Bibliographie (.bib)");
+    bibPathInput.placeholder = "ex. Bibliographie/refs.bib";
+    bibPathInput.value = this.plugin.settings.bibliographyVaultPath;
+    bibPathInput.addEventListener("change", async () => {
+      this.plugin.settings.bibliographyVaultPath = bibPathInput.value;
+      await this.plugin.saveSettings();
+    });
+    const cslPathInput = this.labeledText(citeSec, "Style de citations (.csl)");
+    cslPathInput.placeholder = "ex. Styles/apa.csl";
+    cslPathInput.value = this.plugin.settings.cslVaultPath;
+    cslPathInput.addEventListener("change", async () => {
+      this.plugin.settings.cslVaultPath = cslPathInput.value;
+      await this.plugin.saveSettings();
+    });
 
     scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Mise en page livre" });
     const layoutSec = scroll.createDiv({ cls: "obbwasm-section" });
@@ -610,21 +1014,13 @@ class ObbBookView extends ItemView {
     tplSel.addEventListener("change", async () => {
       this.plugin.settings.selectedTemplateId = tplSel.value;
       await this.plugin.saveSettings();
+      await this.plugin.refreshTemplateMeta();
+      await this.rebuildBookOptionsUI();
     });
 
-    layoutSec.createEl("p", {
-      cls: "obbwasm-help-text",
-      text: "Options fines (titres de chapitres, langue, etc.) : JSON identique au studio web.",
-    });
-    const taRow = layoutSec.createDiv({ cls: "obbwasm-field-row obbwasm-field-row-stack" });
-    taRow.createSpan({ cls: "obbwasm-field-label", text: "Options livre (JSON)" });
-    const ta = taRow.createEl("textarea", { cls: "obbwasm-json-area" });
-    ta.rows = 6;
-    ta.value = this.plugin.settings.bookLayoutJson;
-    ta.addEventListener("change", async () => {
-      this.plugin.settings.bookLayoutJson = ta.value;
-      await this.plugin.saveSettings();
-    });
+    this.bookOptsRoot = layoutSec.createDiv({ cls: "obb-book-opts-root" });
+    this.sectionOrderRoot = layoutSec.createDiv({ cls: "obb-section-order-root" });
+    await this.rebuildBookOptionsUI();
 
     scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Intérieur" });
     const intSec = scroll.createDiv({ cls: "obbwasm-section obbwasm-actions-row" });
@@ -792,7 +1188,10 @@ class ObbBookView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    if (this.frame?.src.startsWith("blob:")) URL.revokeObjectURL(this.frame.src);
+    if (this.previewBlobUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(this.previewBlobUrl);
+      this.previewBlobUrl = null;
+    }
   }
 }
 
@@ -870,10 +1269,52 @@ class ObbWasmSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Journal diagnostic médias")
+      .setDesc(
+        "Écrit dans la console développeur (Ctrl+Shift+I → Console) : Pandoc, chemins d’images, HTTP, virtualisation Typst.",
+      )
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.debugMedia).onChange(async (v) => {
+          this.plugin.settings.debugMedia = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Note glossaire (vault)")
+      .setDesc(
+        "Pour `[[glossaire#slug]]` : markdown avec une section `# titre` par entrée (liens Wikilink vers la note « glossaire »).",
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder("ex. Livre/glossaire.md")
+          .setValue(this.plugin.settings.glossaryVaultPath)
+          .onChange(async (v) => {
+            this.plugin.settings.glossaryVaultPath = v;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Note index des noms (vault)")
+      .setDesc(
+        "Pour `[[index#slug]]` : même schéma (`# nom` + notice). Wikilink vers la note « index ».",
+      )
+      .addText((t) =>
+        t
+          .setPlaceholder("ex. Livre/index.md")
+          .setValue(this.plugin.settings.nameIndexVaultPath)
+          .onChange(async (v) => {
+            this.plugin.settings.nameIndexVaultPath = v;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Gabarits Typst (dépôt officiel)")
-      .setDesc("Télécharge le manifest, puis l’archive et extrait typeset/ (pas de fetch : compatible Obsidian).")
+      .setDesc("Télécharge les templates Typst depuis le dépôt officiel.")
       .addButton((b) =>
-        b.setButtonText("Télécharger les gabarits").onClick(async () => {
+        b.setButtonText("Télécharger").onClick(async () => {
           try {
             await this.plugin.downloadTemplates();
             this.display();
@@ -896,6 +1337,7 @@ class ObbWasmSettingTab extends PluginSettingTab {
           dd.setValue(this.plugin.settings.selectedTemplateId || first).onChange(async (v) => {
             this.plugin.settings.selectedTemplateId = v;
             await this.plugin.saveSettings();
+            await this.plugin.refreshTemplateMeta();
           });
         });
     }
@@ -906,6 +1348,7 @@ class ObbWasmSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.selectedTemplateId).onChange(async (v) => {
           this.plugin.settings.selectedTemplateId = v;
           await this.plugin.saveSettings();
+          await this.plugin.refreshTemplateMeta();
         }),
       );
   }

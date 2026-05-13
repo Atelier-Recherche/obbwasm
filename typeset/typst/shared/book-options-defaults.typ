@@ -12,6 +12,7 @@
   h1-typography: "centered",
   drop-cap-first-para: false,
   line-spacing-preset: "standard",
+  body-text-alignment: "justify",
   chapter-start-odd: false,
   binding-gutter: 0mm,
   transition-blank-style: "empty",

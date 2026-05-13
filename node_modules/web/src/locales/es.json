@@ -37,6 +37,8 @@
     "sourceFormat": "Formato de origen",
     "sourceFile": "Archivo manuscrito",
     "bibFile": "Bibliografía (.bib)",
+    "cslFile": "Estilo de citas CSL (.csl)",
+    "attachedImages": "Imágenes locales (opcional, varios archivos)",
     "imagesDetected": "Imágenes detectadas",
     "coverInternal": "Portadilla interior",
     "editor": "Editorial",
@@ -102,6 +104,14 @@
       "label": "Interlineado",
       "values": { "standard": "Estándar", "narrow": "Estrecho", "wide": "Amplio" }
     },
+    "bodyTextAlignment": {
+      "label": "Alineación del cuerpo",
+      "values": { "justify": "Justificado", "left": "Alineado a la izquierda", "center": "Centrado" }
+    },
+    "markdownHorizontalRule": {
+      "label": "Separador Markdown (`---`)",
+      "values": { "line": "Línea horizontal", "pagebreak": "Salto de página" }
+    },
     "chapterStartOdd": { "label": "Forzar inicio de capítulo en página impar" },
     "bindingGutterMm": {
       "label": "Muelle de encuadernación",
@@ -145,8 +155,12 @@
       "values": { "1": "Solo H1", "2": "H1 + H2", "3": "H1 + H2 + H3" }
     },
     "bibliographyPosition": {
-      "label": "Bibliografía",
-      "values": { "none": "Ninguna", "start": "Inicio del documento", "end": "Fin del documento" }
+      "label": "Ubicación de la bibliografía (Pandoc / .bib)",
+      "values": {
+        "none": "Al final del contenido (sin sección aparte)",
+        "start": "Sección al inicio (título: etiquetas personalizadas)",
+        "end": "Sección al final (título: etiquetas personalizadas)"
+      }
     },
     "widowsOrphans": {
       "label": "Viudas y huérfanas",

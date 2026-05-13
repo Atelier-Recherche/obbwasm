@@ -1,6 +1,12 @@
-import type { BookLayoutState } from "./types";
+import type { BookLayoutState, SectionId } from "./types";
 import type { StringOverrideKey } from "./registry";
-/** Tableau Typst de chaînes pour `section-order`. */
+/** Garantit la section `body` (contenu Pandoc) dans l’ordre émis vers Typst. */
+export declare function ensureSectionOrderForTypst(order: SectionId[]): SectionId[];
+/**
+ * Tableau Typst pour `section-order`.
+ * Typst : un seul élément doit s’écrire `("body",)` avec une virgule finale ; sinon `("body")`
+ * est une chaîne parenthésée et `for sid in …` itère sur les caractères → PDF vide.
+ */
 export declare function typstSectionOrderArray(order: string[]): string;
 /**
  * Lignes à mettre dans `let opts = (` … `)` pour `render(opts)`.

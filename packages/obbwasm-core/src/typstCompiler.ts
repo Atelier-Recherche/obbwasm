@@ -1,23 +1,34 @@
 import type { TypstCompiler } from "@myriaddreamin/typst.ts/compiler";
+import { loadFonts } from "@myriaddreamin/typst.ts/options.init";
 import { setImportWasmModule } from "@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler.mjs";
 import type { ObbWasmAssetLoader } from "./assetLoader.js";
 
-let typstWasmImporterRegistered = false;
+/** 2e argument de {@link loadFonts} (Typst upstream). {@code { assets: false }} désactive les polices CDN. */
+export type LoadFontsUpstreamOptions = NonNullable<Parameters<typeof loadFonts>[1]>;
 
 export async function createTypstCompiler(params: {
   getTypstWasmBuffer: () => Promise<ArrayBuffer>;
   loader: ObbWasmAssetLoader;
   onFontProgress?: (loaded: number, total: number) => void;
+  /**
+   * Sous environnements où le bundler préfixe CDN + `node-fetch-cache` pour les polices
+   * cassent (ex. Obsidian desktop), passez `{ assets: ["text"], fetcher: … }` avec un `fetch`
+   * compatible (ex. `requestUrl` côté Obsidian). Sans option : `assets: ["text"]` et `globalThis.fetch` si défini.
+   */
+  loadFontsOptions?: LoadFontsUpstreamOptions;
 }): Promise<TypstCompiler> {
-  const { getTypstWasmBuffer, loader, onFontProgress } = params;
-
-  if (!typstWasmImporterRegistered) {
-    setImportWasmModule(async () => getTypstWasmBuffer());
-    typstWasmImporterRegistered = true;
-  }
+  const { getTypstWasmBuffer, loader, onFontProgress, loadFontsOptions } = params;
 
   const { createTypstCompiler: mk } = await import("@myriaddreamin/typst.ts/compiler");
-  const { loadFonts } = await import("@myriaddreamin/typst.ts/options.init");
+
+  /*
+   * Charger le .wasm depuis la RAM. Sous Electron, `typst.ts` importe par défaut le paquet
+   * `@myriaddreamin/typst-ts-web-compiler` qui pointe vers `wasm-pack-shim.mjs` et ré-enregistre
+   * `import("fs")` dans `compiler.init()` — d’où l’alias bundler vers `typst_ts_web_compiler.mjs`
+   * (plugin esbuild + site Vite).
+   */
+  setImportWasmModule(async () => getTypstWasmBuffer());
+
   const compiler = mk();
 
   const fontItems = await loader.listFontEntries();
@@ -35,14 +46,26 @@ export async function createTypstCompiler(params: {
   }
   onFontProgress?.(fontItems.length, n);
 
+  /** Polices « text » distantes (Pandoc → Typst utilise New Computer Modern, DejaVu Mono, etc.). */
+  const fontLoadOpts: LoadFontsUpstreamOptions = { ...(loadFontsOptions ?? {}) };
+  if (fontLoadOpts.assets === undefined) {
+    fontLoadOpts.assets = ["text"];
+  }
+  if (fontLoadOpts.assets !== false && fontLoadOpts.fetcher === undefined) {
+    const f = globalThis.fetch;
+    if (typeof f === "function") {
+      fontLoadOpts.fetcher = f.bind(globalThis);
+    }
+  }
+
   await compiler.init({
-    beforeBuild: [loadFonts(fontBuffers)],
+    beforeBuild: [loadFonts(fontBuffers, fontLoadOpts)],
   });
 
   return compiler;
 }
 
-/** Réinitialise l’état global du loader wasm Typst (tests / hot reload). */
+/** Réinitialise l’état global du loader wasm Typst (tests / hot reload). L’importeur est réinjecté au prochain createTypstCompiler. */
 export function resetTypstWasmImporterRegistration(): void {
-  typstWasmImporterRegistered = false;
+  /* gardé pour compat API ; le shim est écrasé à chaque createTypstCompiler. */
 }

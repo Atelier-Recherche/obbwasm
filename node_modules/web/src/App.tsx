@@ -32,9 +32,13 @@ import {
   BOOK_OPTIONS,
   defaultBookLayoutState,
   reconcileSectionOrder,
+  applyTocAndBibPlacement,
+  syncPlacementValuesFromSectionOrder,
   fetchCachedArrayBuffer,
   compileTypstBookToPdf,
   pandocMarkdownToTypst,
+  markdownHorizontalRuleFromBookValues,
+  mergeVisibleBookOptionIds,
   createTypstCompiler,
   mountTypstPackagesFromLoader,
   overrideTypstLet,
@@ -168,11 +172,15 @@ export default function App() {
   const [impositionPdfName, setImpositionPdfName] = useState("");
   const [status, setStatus] = useState("Pret.");
   const [generatedTypst, setGeneratedTypst] = useState("");
+  const [pandocMediaFiles, setPandocMediaFiles] = useState<Record<string, Uint8Array>>({});
   const [renderLog, setRenderLog] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
   const [previewImgDataUrl, setPreviewImgDataUrl] = useState("");
   const [bibFile, setBibFile] = useState<File | null>(null);
+  const [cslFile, setCslFile] = useState<File | null>(null);
+  /** Images locales ajoutées pour Pandoc (chemins du Markdown et préfixe media/). */
+  const [attachedImages, setAttachedImages] = useState<File[]>([]);
   const [colorTheme, setColorTheme] = useState<"light" | "dark">("light");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -199,7 +207,10 @@ export default function App() {
       for (const [k, v] of Object.entries(patch)) {
         if (v !== undefined) nextValues[k] = v;
       }
-      const sectionOrder = reconcileSectionOrder(prev.sectionOrder, nextValues);
+      let sectionOrder = reconcileSectionOrder(prev.sectionOrder, nextValues);
+      if (patch["toc-position"] !== undefined || patch["bibliography-position"] !== undefined) {
+        sectionOrder = applyTocAndBibPlacement(sectionOrder, nextValues);
+      }
       return { ...prev, values: nextValues, sectionOrder };
     });
   }, []);
@@ -207,7 +218,8 @@ export default function App() {
   const visibleOptionIds = useMemo(() => {
     const supported = templateMetaById[selectedTemplate]?.supportedOptions ?? [];
     const all = BOOK_OPTIONS.map((o) => o.id);
-    return filterOptionIdsByTemplate(all, supported);
+    const filtered = filterOptionIdsByTemplate(all, supported);
+    return mergeVisibleBookOptionIds(filtered);
   }, [selectedTemplate, templateMetaById]);
 
   const imageRefs = useMemo(() => extractMarkdownImages(sourceText), [sourceText]);
@@ -471,16 +483,25 @@ export default function App() {
     setStatus("Conversion Pandoc WASM -> Typst...");
     try {
       const pandoc = await import("pandoc-wasm");
-      const { typst, stderr } = await pandocMarkdownToTypst({
+      const extraFiles: Record<string, Blob> = {};
+      for (const f of attachedImages) {
+        extraFiles[f.name] = f;
+        extraFiles[`media/${f.name}`] = f;
+      }
+      const { typst, stderr, mediaFiles } = await pandocMarkdownToTypst({
         convert: pandoc.convert,
         sourceFormat,
         sourceText,
         sourceBlob: sourceFileBlob,
         sourceFileName,
         titleFallback: title,
-        bibliography: bibFile ? { name: bibFile.name, blob: bibFile } : null,
+        bibliography: bibFile ? { name: "obb-refs.bib", blob: bibFile } : null,
+        csl: bibFile && cslFile ? { name: "obb-style.csl", blob: cslFile } : null,
+        extraFiles: Object.keys(extraFiles).length ? extraFiles : undefined,
+        markdownHorizontalRule: markdownHorizontalRuleFromBookValues(bookLayout.values),
       });
       setGeneratedTypst(typst);
+      setPandocMediaFiles(mediaFiles);
       setRenderLog(stderr);
       pushLog(`Pandoc preview: ${typst.slice(0, 220).replace(/\s+/g, " ")}`);
       pushLog(`Pandoc done: stdout=${typst.length} chars, stderr=${stderr.length} chars.`);
@@ -569,6 +590,16 @@ export default function App() {
         generatedTypst,
         bookLayout,
         meta: { title, author, publisher },
+        mediaFiles: pandocMediaFiles,
+        fetchRemoteBytes: async (url: string) => {
+          try {
+            const r = await fetch(url, { mode: "cors" });
+            if (!r.ok) return null;
+            return new Uint8Array(await r.arrayBuffer());
+          } catch {
+            return null;
+          }
+        },
       });
 
       if (!out.pdf) {
@@ -1307,6 +1338,23 @@ export default function App() {
               {t("ui.bibFile")}
               <input type="file" accept=".bib" onChange={(e) => setBibFile(e.target.files?.[0] ?? null)} />
             </label>
+            <label>
+              {t("ui.cslFile")}
+              <input
+                type="file"
+                accept=".csl,.xml,application/xml,text/xml"
+                onChange={(e) => setCslFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label>
+              {t("ui.attachedImages")}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => setAttachedImages(e.target.files ? Array.from(e.target.files) : [])}
+              />
+            </label>
           </div>
           <section className="subpanel book-layout-panel">
             <h3>{t("ui.bookOptions")}</h3>
@@ -1320,7 +1368,13 @@ export default function App() {
             <p className="sub">{t("ui.sectionOrderHint")}</p>
             <SectionOrderList
               sectionOrder={bookLayout.sectionOrder}
-              onReorder={(next) => setBookLayout((prev) => ({ ...prev, sectionOrder: next }))}
+              onReorder={(next) =>
+                setBookLayout((prev) => ({
+                  ...prev,
+                  sectionOrder: next,
+                  values: syncPlacementValuesFromSectionOrder(prev.values, next),
+                }))
+              }
             />
           </section>
           <textarea value={sourceText} onChange={(e) => setSourceText(e.target.value)} />

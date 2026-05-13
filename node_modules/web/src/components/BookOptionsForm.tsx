@@ -42,7 +42,8 @@ export function BookOptionsForm({ visibleOptionIds, bookLayout, setBookLayout, p
   }
 
   function isExpanded(key: CollapsibleKey): boolean {
-    return openSections[key] === true;
+    /* Par défaut ouvert : les sections sont repliables en cliquant sur l’en-tête. */
+    return openSections[key] !== false;
   }
 
   function setOverride(key: string, value: string) {
@@ -150,18 +151,20 @@ export function BookOptionsForm({ visibleOptionIds, bookLayout, setBookLayout, p
         </div>
       )}
 
-      <section className={`book-options-section book-options-section-labels ${isExpanded("labels") ? "is-open" : ""}`}>
+      <section
+        className={`book-options-section book-options-section-labels ${openSections.labels === true ? "is-open" : ""}`}
+      >
         <button
           type="button"
           className="book-options-section-toggle"
-          aria-expanded={isExpanded("labels")}
+          aria-expanded={openSections.labels === true}
           onClick={() => toggleSection("labels")}
         >
           <ChevronRight className="book-options-section-chevron" aria-hidden size={18} />
           <span className="book-options-section-heading">{t("ui.customLabels")}</span>
           <span className="book-options-count-pill">{STRING_OVERRIDE_KEYS.length}</span>
         </button>
-        {isExpanded("labels") ? (
+        {openSections.labels === true ? (
           <>
             <p className="sub book-options-labels-hint">{t("ui.stringsPlaceholder")}</p>
             <div className="book-options-section-grid book-options-labels-grid">

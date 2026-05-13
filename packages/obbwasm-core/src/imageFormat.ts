@@ -1,0 +1,92 @@
+/**
+ * Détecte le format réel d’une image (évite `.png` par défaut quand le buffer est du JPEG, etc.)
+ * et fournit un PNG minimal de secours si le contenu n’est pas une image valide.
+ */
+
+/** PNG 1×1 transparent (remplace HTML d’erreur ou octets non-image pour éviter l’échec Typst). */
+const PLACEHOLDER_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/** 70 octets — même image que PLACEHOLDER_PNG_B64 si base64 indisponible. */
+const FALLBACK_1X1_PNG = Uint8Array.from([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 218, 99, 252, 207, 192, 80, 15, 0, 4, 133, 1, 128, 132, 169, 140, 33, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+]);
+
+function base64ToUint8(b64: string): Uint8Array {
+  const g = globalThis as {
+    Buffer?: { from(data: string, enc: string): Uint8Array };
+    atob?: (s: string) => string;
+  };
+  if (typeof g.Buffer !== "undefined") {
+    return new Uint8Array(g.Buffer.from(b64, "base64"));
+  }
+  if (typeof g.atob === "function") {
+    const bin = g.atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  return new Uint8Array(FALLBACK_1X1_PNG);
+}
+
+export const OBB_PLACEHOLDER_PNG: Uint8Array = (() => {
+  const u = base64ToUint8(PLACEHOLDER_PNG_B64);
+  return u.length > 0 ? u : FALLBACK_1X1_PNG;
+})();
+
+/** Extension de fichier (avec point) à utiliser pour Typst / VFS. */
+export function imageExtFromMagic(bytes: Uint8Array): string | null {
+  if (!bytes || bytes.length < 8) return null;
+  const b0 = bytes[0];
+  const b1 = bytes[1];
+  const b2 = bytes[2];
+  const b3 = bytes[3];
+  if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4e && b3 === 0x47) return ".png";
+  if (b0 === 0xff && b1 === 0xd8 && b2 === 0xff) return ".jpg";
+  if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46) return ".gif";
+  if (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46 && bytes.length >= 12) {
+    const t8 = String.fromCharCode(bytes[8] ?? 0, bytes[9] ?? 0, bytes[10] ?? 0, bytes[11] ?? 0);
+    if (t8 === "WEBP") return ".webp";
+  }
+  if (b0 === 0x42 && b1 === 0x4d) return ".bmp";
+  return null;
+}
+
+/** HTML / texte d’erreur renvoyé à la place d’une image (URL HTTP, mauvais chemin, etc.). */
+export function looksLikeNonImageBytes(bytes: Uint8Array): boolean {
+  if (!bytes?.length) return true;
+  const n = Math.min(bytes.length, 64);
+  const head = new TextDecoder("utf-8", { fatal: false }).decode(bytes.subarray(0, n)).trimStart();
+  if (head.startsWith("<") || head.startsWith("{") || head.startsWith("<!")) return true;
+  if (head.toLowerCase().startsWith("http/")) return true;
+  return false;
+}
+
+/**
+ * Retourne les octets à monter dans le monde Typst : buffer corrigé si l’extension ne correspond pas au magic,
+ * ou placeholder PNG si le contenu n’est pas une image reconnue.
+ */
+export function normalizeImageBytesForTypst(
+  bytes: Uint8Array,
+  pathHint: string,
+): { bytes: Uint8Array; usedPlaceholder: boolean; resolvedExt: string } {
+  if (!bytes?.length) {
+    return { bytes: OBB_PLACEHOLDER_PNG, usedPlaceholder: true, resolvedExt: ".png" };
+  }
+  if (looksLikeNonImageBytes(bytes) && !imageExtFromMagic(bytes)) {
+    return { bytes: OBB_PLACEHOLDER_PNG, usedPlaceholder: true, resolvedExt: ".png" };
+  }
+  const magic = imageExtFromMagic(bytes);
+  const fromPath = pathHint.replace(/\\/g, "/").split("/").pop() ?? "";
+  const dot = fromPath.lastIndexOf(".");
+  const pathExt = dot > 0 ? fromPath.slice(dot).toLowerCase() : "";
+  const knownPath = /^\.(png|jpe?g|gif|webp|bmp)$/i.test(pathExt) ? pathExt : "";
+  if (pathExt === ".png" && magic && magic !== ".png") {
+    return { bytes, usedPlaceholder: false, resolvedExt: magic };
+  }
+  if (pathExt === ".png" && !magic && bytes.length >= 4 && bytes[0] !== 0x89) {
+    return { bytes: OBB_PLACEHOLDER_PNG, usedPlaceholder: true, resolvedExt: ".png" };
+  }
+  const resolvedExt = magic ?? (knownPath || ".png");
+  return { bytes, usedPlaceholder: false, resolvedExt };
+}

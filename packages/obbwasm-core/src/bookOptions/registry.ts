@@ -61,6 +61,23 @@ export const BOOK_OPTIONS: BookOptionDef[] = [
     enumValueKeys: true,
   },
   {
+    id: "body-text-alignment",
+    kind: "enum",
+    typstKey: "body-text-alignment",
+    enumValues: ["justify", "left", "center"],
+    labelKey: "bodyTextAlignment",
+    enumValueKeys: true,
+  },
+  {
+    id: "markdown-horizontal-rule",
+    kind: "enum",
+    /** Réservé au pipeline Pandoc → Typst (non fusionné dans `opts` du gabarit). */
+    typstKey: "markdown-horizontal-rule",
+    enumValues: ["line", "pagebreak"],
+    labelKey: "markdownHorizontalRule",
+    enumValueKeys: true,
+  },
+  {
     id: "chapter-start-odd",
     kind: "bool",
     typstKey: "chapter-start-odd",
@@ -229,3 +246,10 @@ export type StringOverrideKey = (typeof STRING_OVERRIDE_KEYS)[number];
 export const BOOK_OPTION_BY_ID: Record<string, BookOptionDef> = Object.fromEntries(
   BOOK_OPTIONS.map((o) => [o.id, o]),
 );
+
+/** Options affichées même si absentes de `supported-options` du gabarit (hors `conf` Typst). */
+export const PIPELINE_ONLY_BOOK_OPTION_IDS: readonly string[] = ["markdown-horizontal-rule"];
+
+export function mergeVisibleBookOptionIds(templateFilteredIds: string[]): string[] {
+  return [...new Set([...templateFilteredIds, ...PIPELINE_ONLY_BOOK_OPTION_IDS])];
+}

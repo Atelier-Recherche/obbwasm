@@ -1,5 +1,5 @@
 import { CANONICAL_SECTION_ORDER } from "./defaults";
-import { applyBibliographyPosition, applyTocPosition } from "./sectionOrder";
+import { applyBibliographyPosition, applyTocPosition, deriveBibliographyPosition, deriveTocPosition, } from "./sectionOrder";
 export function isSectionActive(values, id) {
     const tp = String(values["toc-position"] ?? "none");
     const bp = String(values["bibliography-position"] ?? "none");
@@ -76,10 +76,27 @@ export function applyTocAndBibPlacement(order, values) {
     }
     return o;
 }
-/** Réconciliation complète après changement d’option ou chargement. */
+/**
+ * Ajoute ou retire des sections selon les options actives, sans réordonner la TOC ni la bibliographie :
+ * l’ordre manuel (liste à flèches / glisser-déposer) reste donc stable au chargement et après un simple ↑↓.
+ */
 export function reconcileSectionOrder(prev, values) {
-    let next = mergeSectionOrderWithActive(prev, values);
-    next = applyTocAndBibPlacement(next, values);
+    return mergeSectionOrderWithActive(prev, values);
+}
+/**
+ * Met à jour `toc-position` et `bibliography-position` pour refléter la position réelle de ces blocs
+ * par rapport au corps (après réordonnancement manuel).
+ */
+export function syncPlacementValuesFromSectionOrder(values, sectionOrder) {
+    const next = { ...values };
+    const tp = deriveTocPosition(sectionOrder);
+    const bp = deriveBibliographyPosition(sectionOrder);
+    if (String(values["toc-position"] ?? "none") !== "none" && tp !== "none") {
+        next["toc-position"] = tp;
+    }
+    if (String(values["bibliography-position"] ?? "none") !== "none" && bp !== "none") {
+        next["bibliography-position"] = bp;
+    }
     return next;
 }
 //# sourceMappingURL=sectionVisibility.js.map

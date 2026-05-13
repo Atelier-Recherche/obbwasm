@@ -3,7 +3,7 @@
 // version: v2.0
 // detail: Modèle B5 (143.5mm x 210mm), options ObbWasm (registre partagé + ordre des sections).
 // format: brsnoba5
-// supported-options: chapter-title-in-header, page-number-placement, header-footer-rule, page-number-style, auto-heading-numbering, h1-typography, drop-cap-first-para, line-spacing-preset, chapter-start-odd, binding-gutter-mm, transition-blank-style, caption-position, footnote-scope, image-treatment, accent-color, show-index, list-figures-style, show-glossary, cover-page, half-title-page, title-page, front-title-recto-with-blank-before, section-new-page, section-title-recto-with-blank-before, toc-position, toc-depth, bibliography-position, widows-orphans, show-annexes, show-back-cover
+// supported-options: chapter-title-in-header, page-number-placement, header-footer-rule, page-number-style, auto-heading-numbering, h1-typography, drop-cap-first-para, line-spacing-preset, body-text-alignment, chapter-start-odd, binding-gutter-mm, transition-blank-style, caption-position, footnote-scope, image-treatment, accent-color, show-index, list-figures-style, show-glossary, cover-page, half-title-page, title-page, front-title-recto-with-blank-before, section-new-page, section-title-recto-with-blank-before, toc-position, toc-depth, bibliography-position, widows-orphans, show-annexes, show-back-cover
 // @obbwasm-meta end
 
 #import "/typeset/typst/shared/book-options-defaults.typ": book-options-defaults
@@ -192,13 +192,25 @@
   } else if sid == "listFigures" and conf.list-figures-style != "none" {
     _placeholder-page(if conf.label-list-figures != "" { conf.label-list-figures } else { "Figures" })
   } else if sid == "bibliography" and conf.bibliography-position != "none" {
-    _placeholder-page(if conf.label-bibliography != "" { conf.label-bibliography } else { "Bibliographie" })
+    pagebreak()
+    heading(level: 1, if conf.label-bibliography != "" { conf.label-bibliography } else { "Bibliographie" })
+    parbreak()
+    include("/obb-generated-bibliography.typ")
+    pagebreak()
   } else if sid == "indexGlossary" and (conf.show-index or conf.show-glossary) {
     if conf.show-index {
-      _placeholder-page(if conf.label-index != "" { conf.label-index } else { "Index" })
+      pagebreak()
+      heading(level: 1, if conf.label-index != "" { conf.label-index } else { "Index des noms" })
+      parbreak()
+      include("/obb-generated-name-index.typ")
+      pagebreak()
     }
     if conf.show-glossary {
-      _placeholder-page(if conf.label-glossary != "" { conf.label-glossary } else { "Glossaire" })
+      pagebreak()
+      heading(level: 1, if conf.label-glossary != "" { conf.label-glossary } else { "Glossaire" })
+      parbreak()
+      include("/obb-generated-glossary.typ")
+      pagebreak()
     }
   } else if sid == "backCover" and conf.show-back-cover {
     pagebreak()
@@ -219,12 +231,23 @@
     numbering: none,
   )
 
-  set text(font: conf.font-family, size: conf.font-size, lang: conf.document-lang)
-  set par(leading: _line-leading(conf))
-
-  if conf.widows-orphans == "on" {
-    set par(justify: true)
+  let body-align = conf.at("body-text-alignment", default: "justify")
+  set text(
+    font: conf.font-family,
+    size: conf.font-size,
+    lang: conf.document-lang,
+    hyphenate: body-align == "justify",
+  )
+  if body-align == "center" {
+    set align(center)
+  } else {
+    set align(start)
   }
+  // Règle Typst officielle « show-set » : s’applique à chaque élément `par` (corps Pandoc inclus).
+  show par: set par(
+    leading: _line-leading(conf),
+    justify: body-align == "justify",
+  )
 
   if conf.auto-break-long-tokens {
     let chunk-rx = regex("[A-Za-z0-9]{" + str(conf.auto-break-chunk-size) + "}")
@@ -301,5 +324,7 @@
 
 #let render(opts) = {
   let merged = conf + opts
-  apply-layout(merged, include("content.typ"))
+  apply-layout(merged, [
+    #include "/content.typ"
+  ])
 }

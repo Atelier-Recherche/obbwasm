@@ -102,6 +102,14 @@
       "label": "Zeilenabstand",
       "values": { "standard": "Standard", "narrow": "Eng", "wide": "Weit" }
     },
+    "bodyTextAlignment": {
+      "label": "Textausrichtung (Fließtext)",
+      "values": { "justify": "Blocksatz", "left": "Linksbündig", "center": "Zentriert" }
+    },
+    "markdownHorizontalRule": {
+      "label": "Markdown-Trennlinie (`---`)",
+      "values": { "line": "Horizontale Linie", "pagebreak": "Seitenumbruch" }
+    },
     "chapterStartOdd": { "label": "Kapitelanfang auf ungerader Seite erzwingen" },
     "bindingGutterMm": {
       "label": "Bundsteg",
@@ -145,8 +153,12 @@
       "values": { "1": "Nur H1", "2": "H1 + H2", "3": "H1 + H2 + H3" }
     },
     "bibliographyPosition": {
-      "label": "Bibliographie",
-      "values": { "none": "Keine", "start": "Anfang", "end": "Ende" }
+      "label": "Bibliografieplatzierung (Pandoc / .bib)",
+      "values": {
+        "none": "Im Fließtext am Inhaltsende (kein eigener Abschnitt)",
+        "start": "Eigener Abschnitt am Anfang (Titel: eigene Bezeichnungen)",
+        "end": "Eigener Abschnitt am Ende (Titel: eigene Bezeichnungen)"
+      }
     },
     "widowsOrphans": {
       "label": "Huren- und Schusterjungen",

@@ -102,6 +102,14 @@
       "label": "Line spacing",
       "values": { "standard": "Standard", "narrow": "Tight", "wide": "Loose" }
     },
+    "bodyTextAlignment": {
+      "label": "Body text alignment",
+      "values": { "justify": "Justified", "left": "Ragged right (flush left)", "center": "Centered" }
+    },
+    "markdownHorizontalRule": {
+      "label": "Markdown horizontal rule (`---`)",
+      "values": { "line": "Horizontal line", "pagebreak": "Page break" }
+    },
     "chapterStartOdd": { "label": "Force chapter start on odd page" },
     "bindingGutterMm": {
       "label": "Binding gutter",
@@ -145,8 +153,12 @@
       "values": { "1": "H1 only", "2": "H1 + H2", "3": "H1 + H2 + H3" }
     },
     "bibliographyPosition": {
-      "label": "Bibliography",
-      "values": { "none": "None", "start": "Beginning", "end": "End" }
+      "label": "Bibliography placement (Pandoc / .bib)",
+      "values": {
+        "none": "Inline at end of body (no separate section)",
+        "start": "Dedicated section at start (title: custom labels)",
+        "end": "Dedicated section at end (title: custom labels)"
+      }
     },
     "widowsOrphans": {
       "label": "Widows and orphans",

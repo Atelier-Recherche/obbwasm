@@ -16,11 +16,26 @@ function typstBool(v) {
 function typstStr(s) {
     return JSON.stringify(s);
 }
-/** Tableau Typst de chaînes pour `section-order`. */
+/** Garantit la section `body` (contenu Pandoc) dans l’ordre émis vers Typst. */
+export function ensureSectionOrderForTypst(order) {
+    const o = [...order];
+    if (!o.includes("body")) {
+        const ti = o.indexOf("toc");
+        const insert = ti >= 0 ? ti + 1 : 0;
+        o.splice(insert, 0, "body");
+    }
+    return o;
+}
+/**
+ * Tableau Typst pour `section-order`.
+ * Typst : un seul élément doit s’écrire `("body",)` avec une virgule finale ; sinon `("body")`
+ * est une chaîne parenthésée et `for sid in …` itère sur les caractères → PDF vide.
+ */
 export function typstSectionOrderArray(order) {
     if (order.length === 0)
         return `()`;
-    return `(${order.map((id) => typstStr(id)).join(", ")})`;
+    const inner = order.map((id) => typstStr(id)).join(", ");
+    return order.length === 1 ? `(${inner},)` : `(${inner})`;
 }
 /**
  * Lignes à mettre dans `let opts = (` … `)` pour `render(opts)`.
@@ -65,6 +80,7 @@ export function buildTypstOptsLines(state, resolvedDocStrings, meta) {
         `    h1-typography: ${typstStr(getStr("h1-typography", "centered"))},`,
         `    drop-cap-first-para: ${typstBool(getBool("drop-cap-first-para"))},`,
         `    line-spacing-preset: ${typstStr(getStr("line-spacing-preset", "standard"))},`,
+        `    body-text-alignment: ${typstStr(getStr("body-text-alignment", "justify"))},`,
         `    chapter-start-odd: ${typstBool(getBool("chapter-start-odd"))},`,
         `    binding-gutter: ${bindMm}mm,`,
         `    transition-blank-style: ${typstStr(getStr("transition-blank-style", "empty"))},`,
@@ -79,7 +95,7 @@ export function buildTypstOptsLines(state, resolvedDocStrings, meta) {
         `    show-annexes: ${typstBool(getBool("show-annexes"))},`,
         `    show-back-cover: ${typstBool(getBool("show-back-cover"))},`,
         `    document-lang: ${typstStr(state.documentLang)},`,
-        `    section-order: ${typstSectionOrderArray(state.sectionOrder.map(String))},`,
+        `    section-order: ${typstSectionOrderArray(ensureSectionOrderForTypst(state.sectionOrder).map(String))},`,
         `    label-toc: ${typstStr(resolvedDocStrings["label-toc"] ?? "")},`,
         `    label-bibliography: ${typstStr(resolvedDocStrings["label-bibliography"] ?? "")},`,
         `    label-index: ${typstStr(resolvedDocStrings["label-index"] ?? "")},`,

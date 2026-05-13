@@ -112,3 +112,142 @@
   gap: 8px;
   margin-top: 4px;
 }
+
+.obb-book-opts-root,
+.obb-section-order-root {
+  margin-top: 8px;
+}
+
+.obb-book-options-heading {
+  margin: 8px 0 6px;
+  font-size: var(--font-ui-small);
+  font-weight: 600;
+}
+
+.obb-book-options-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obb-book-opt-lang-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.obb-book-opt-label {
+  flex: 0 0 min(42%, 160px);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.obb-book-options-section {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.obb-book-options-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--background-secondary);
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+}
+
+.obb-book-options-section-toggle:hover {
+  background: var(--background-modifier-hover);
+}
+
+.obb-book-options-section-heading {
+  flex: 1;
+  font-weight: 600;
+}
+
+.obb-book-options-count-pill {
+  font-size: var(--font-ui-smaller);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.obb-book-options-section-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+
+.obb-book-options-section-grid[hidden],
+.obb-book-options-labels-grid[hidden] {
+  display: none !important;
+}
+
+.obb-book-opt-field.inline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.obb-book-opt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.obb-book-opt-bool .obb-toggle-chip {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+}
+
+.obb-book-opt-bool .obb-toggle-chip.is-on {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+
+.obb-book-options-labels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+
+.obb-section-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.obb-section-order-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.obb-section-order-grip {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  user-select: none;
+}
+
+.obb-section-order-btns {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
