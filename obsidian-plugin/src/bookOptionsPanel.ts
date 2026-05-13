@@ -4,9 +4,12 @@ import {
   BOOK_OPTION_SECTION_IDS,
   BOOK_OPTION_SECTION_KEYS,
   BOOK_OPTIONS,
+  STRING_OVERRIDE_KEYS,
+  countBookOptionsNonDefaultInDefs,
+  countNonEmptyStringOverrides,
+  expandDependentBookOptionIds,
   filterOptionIdsByTemplate,
   mergeVisibleBookOptionIds,
-  STRING_OVERRIDE_KEYS,
   syncPlacementValuesFromSectionOrder,
   type TemplateMeta,
 } from "@obbwasm/core";
@@ -62,7 +65,9 @@ export function mountBookOptionsPanel(root: HTMLElement, cb: BookOptionsPanelCal
 
   const allIds = BOOK_OPTIONS.map((o) => o.id);
   const supported = templateMeta?.supportedOptions ?? [];
-  const visibleOptionIds = mergeVisibleBookOptionIds(filterOptionIdsByTemplate(allIds, supported));
+  const visibleOptionIds = mergeVisibleBookOptionIds(
+    expandDependentBookOptionIds(filterOptionIdsByTemplate(allIds, supported)),
+  );
 
   const wrap = document.createElement("div");
   wrap.className = "obb-book-options-form";
@@ -113,10 +118,17 @@ export function mountBookOptionsPanel(root: HTMLElement, cb: BookOptionsPanelCal
 
   for (const sectionKey of BOOK_OPTION_SECTION_KEYS) {
     const ids = BOOK_OPTION_SECTION_IDS[sectionKey];
-    const defs = ids.map((id) => defsById[id]).filter((d): d is BookOptionDef => !!d && allow.has(d.id));
+    const defs = ids
+      .map((id) => defsById[id])
+      .filter((d): d is BookOptionDef => !!d && allow.has(d.id))
+      .filter((d) => {
+        if (d.id !== "line-spacing-em") return true;
+        return getLayout().values["line-spacing-preset"] === "custom";
+      });
     if (defs.length === 0) continue;
 
-    const expanded = openSections[sectionKey] !== false;
+    const expanded = openSections[sectionKey] === true;
+    const nonDefault = countBookOptionsNonDefaultInDefs(defs, getLayout().values);
     const section = document.createElement("section");
     section.className = "obb-book-options-section" + (expanded ? " is-open" : "");
 
@@ -138,7 +150,17 @@ export function mountBookOptionsPanel(root: HTMLElement, cb: BookOptionsPanelCal
     pill.className = "obb-book-options-count-pill";
     pill.textContent = String(defs.length);
 
-    head.append(chev, title, pill);
+    const pillNd = document.createElement("span");
+    pillNd.className =
+      "obb-book-options-count-pill" + (nonDefault > 0 ? " obb-book-options-count-pill--nondefault" : " obb-book-options-count-pill--zero");
+    pillNd.textContent = String(nonDefault);
+    pillNd.title = fr.ui.bookOptionsNonDefaultHint;
+
+    const countWrap = document.createElement("span");
+    countWrap.className = "obb-book-options-section-count";
+    countWrap.append(pill, pillNd);
+
+    head.append(chev, title, countWrap);
 
     const grid = document.createElement("div");
     grid.className = "obb-book-options-section-grid";
@@ -161,7 +183,7 @@ export function mountBookOptionsPanel(root: HTMLElement, cb: BookOptionsPanelCal
     wrap.appendChild(section);
   }
 
-  /* Libellés personnalisés */
+  const labelsFilled = countNonEmptyStringOverrides(getLayout().stringOverrides, STRING_OVERRIDE_KEYS);
   const labExpanded = openSections.labels === true;
   const labelsSection = document.createElement("section");
   labelsSection.className = "obb-book-options-section obb-book-options-labels" + (labExpanded ? " is-open" : "");
@@ -184,7 +206,17 @@ export function mountBookOptionsPanel(root: HTMLElement, cb: BookOptionsPanelCal
   lPill.className = "obb-book-options-count-pill";
   lPill.textContent = String(STRING_OVERRIDE_KEYS.length);
 
-  lHead.append(lChev, lTitle, lPill);
+  const lPillNd = document.createElement("span");
+  lPillNd.className =
+    "obb-book-options-count-pill" + (labelsFilled > 0 ? " obb-book-options-count-pill--nondefault" : " obb-book-options-count-pill--zero");
+  lPillNd.textContent = String(labelsFilled);
+  lPillNd.title = fr.ui.bookOptionsLabelsFilledHint;
+
+  const lCountWrap = document.createElement("span");
+  lCountWrap.className = "obb-book-options-section-count";
+  lCountWrap.append(lPill, lPillNd);
+
+  lHead.append(lChev, lTitle, lCountWrap);
 
   const labelsBody = document.createElement("div");
   labelsBody.className = "obb-book-options-labels-grid";
@@ -236,6 +268,26 @@ function renderControl(
   getLayout: () => BookLayoutState,
   patchValues: (p: Partial<Record<string, boolean | string>>) => Promise<void>,
 ): HTMLElement {
+  if (def.kind === "number") {
+    const row = document.createElement("label");
+    row.className = "obb-book-opt-field inline-field";
+    const sp = document.createElement("span");
+    sp.className = "obb-book-opt-label";
+    sp.textContent = optLabel(fr, def);
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.step = "0.05";
+    inp.min = "0.5";
+    inp.max = "4";
+    const cur0 = getLayout().values[def.id];
+    inp.value = typeof cur0 === "string" ? cur0 : "1.2";
+    inp.addEventListener("change", async () => {
+      await patchValues({ [def.id]: inp.value });
+    });
+    row.append(sp, inp);
+    return row;
+  }
+
   if (def.kind === "bool") {
     const row = document.createElement("div");
     row.className = "obb-book-opt-bool";

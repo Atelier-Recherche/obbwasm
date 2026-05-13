@@ -180,6 +180,23 @@
   color: var(--text-muted);
 }
 
+.obb-book-options-section-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.obb-book-options-count-pill--nondefault {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.obb-book-options-count-pill--zero {
+  opacity: 0.55;
+}
+
 .obb-book-options-section-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

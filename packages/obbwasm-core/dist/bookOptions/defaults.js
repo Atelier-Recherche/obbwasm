@@ -24,6 +24,7 @@ export function defaultBookValues() {
         "h1-typography": "centered",
         "drop-cap-first-para": false,
         "line-spacing-preset": "standard",
+        "line-spacing-em": "1.2",
         "body-text-alignment": "justify",
         "markdown-horizontal-rule": "line",
         "chapter-start-odd": false,

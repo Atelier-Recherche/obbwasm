@@ -10,14 +10,14 @@ $body = read_json_body();
 $text = (string)($body["text"] ?? "");
 $title = (string)($body["title"] ?? "Titre");
 $author = (string)($body["author"] ?? "Auteur");
-$templatePath = (string)($body["templatePath"] ?? "typeset/typst/layout/Garamond-brsnoba5-layout.typ");
+$templatePath = (string)($body["templatePath"] ?? "typeset/layout/Garamond-brsnoba5-layout.typ");
 
 $text = preg_replace('/\s+([;:!?])/u', "\u{00A0}$1", $text ?? "") ?? $text;
 $text = preg_replace('/(\d+)\s+(%|kg|g|cm|mm|m|km|€)/u', "$1\u{00A0}$2", $text ?? "") ?? $text;
 
 $importPath = $templatePath;
 if ($importPath === "") {
-    $importPath = "typeset/typst/layout/Garamond-brsnoba5-layout.typ";
+    $importPath = "typeset/layout/Garamond-brsnoba5-layout.typ";
 }
 $typst = "#import " . json_encode($importPath, JSON_UNESCAPED_SLASHES) . ": apply-layout, default-config\n\n";
 $typst .= "#let conf = (..default-config, title: " . json_encode($title) . ", author: " . json_encode($author) . ")\n\n";

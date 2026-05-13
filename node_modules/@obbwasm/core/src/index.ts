@@ -1,5 +1,7 @@
 export * from "./assetLoader.js";
+export * from "./bookPresets.js";
 export * from "./bookOptions/defaults.js";
+export * from "./bookOptions/compareDefaults.js";
 export * from "./bookOptions/docStrings.js";
 export * from "./bookOptions/registry.js";
 export * from "./bookOptions/sectionOrder.js";

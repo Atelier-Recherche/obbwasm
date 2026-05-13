@@ -127,7 +127,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
         $typesetRoot = project_typeset_root();
         $slug = preg_replace("/[^a-zA-Z0-9_-]+/", "_", $id);
-        $relDir = "typeset/typst/layout/submitted/" . $slug;
+        $relDir = "typeset/layout/submitted/" . $slug;
         $absDir = $typesetRoot . DIRECTORY_SEPARATOR . str_replace("/", DIRECTORY_SEPARATOR, $relDir);
         if (!is_dir($absDir)) {
             mkdir($absDir, 0777, true);

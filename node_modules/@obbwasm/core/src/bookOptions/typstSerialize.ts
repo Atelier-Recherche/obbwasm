@@ -21,6 +21,13 @@ function typstStr(s: string): string {
   return JSON.stringify(s);
 }
 
+/** Valeur numérique pour `line-spacing: Xem` (preset custom). */
+export function clampLineSpacingEmString(raw: string): string {
+  const n = parseFloat(String(raw).replace(",", "."));
+  const x = Number.isFinite(n) ? Math.min(4, Math.max(0.5, n)) : 1.2;
+  return String(x);
+}
+
 /** Garantit la section `body` (contenu Pandoc) dans l’ordre émis vers Typst. */
 export function ensureSectionOrderForTypst(order: SectionId[]): SectionId[] {
   const o = [...order];
@@ -67,6 +74,12 @@ export function buildTypstOptsLines(
   const bibAtStart = bibPos === "start";
   const bibAtEnd = bibPos === "end";
 
+  const lineSpacingPreset = getStr("line-spacing-preset", "standard");
+  const lineSpacingExtra =
+    lineSpacingPreset === "custom"
+      ? [`    line-spacing: ${clampLineSpacingEmString(getStr("line-spacing-em", "1.2"))}em,`]
+      : [];
+
   const lines: string[] = [
     `    title: ${typstStr(meta.title)},`,
     `    author: ${typstStr(meta.author)},`,
@@ -93,7 +106,8 @@ export function buildTypstOptsLines(
     `    auto-heading-numbering: ${typstBool(autoNum)},`,
     `    h1-typography: ${typstStr(getStr("h1-typography", "centered"))},`,
     `    drop-cap-first-para: ${typstBool(getBool("drop-cap-first-para"))},`,
-    `    line-spacing-preset: ${typstStr(getStr("line-spacing-preset", "standard"))},`,
+    `    line-spacing-preset: ${typstStr(lineSpacingPreset)},`,
+    ...lineSpacingExtra,
     `    body-text-alignment: ${typstStr(getStr("body-text-alignment", "justify"))},`,
     `    chapter-start-odd: ${typstBool(getBool("chapter-start-odd"))},`,
     `    binding-gutter: ${bindMm}mm,`,

@@ -67,6 +67,19 @@
     "close": "Schließen",
     "bookOptions": "Layout-Optionen",
     "bookOptionsNone": "Diese Vorlage legt keine Layout-Optionen in der Oberfläche offen.",
+    "bookLayoutPresets": "Voreinstellungen (Konto)",
+    "bookPresetsNeedLogin": "Melden Sie sich an, um Layout-Voreinstellungen zu speichern.",
+    "presetNamePlaceholder": "Name der Voreinstellung",
+    "presetSave": "Aktuelles Layout speichern",
+    "presetLoad": "Laden",
+    "presetDelete": "Löschen",
+    "presetPick": "Auswählen…",
+    "presetListEmpty": "(keine Voreinstellungen)",
+    "presetIncludesBookMeta": "Speichert auch Titel, Autor und Ausgabe (Felder oben). .bib- / .csl-Dateien bleiben eine lokale Browserauswahl.",
+    "presetLoadedBanner": "Voreinstellung geladen:",
+    "presetSavedBanner": "Voreinstellung gespeichert:",
+    "bookOptionsNonDefaultHint": "Optionen mit abweichendem Standardwert",
+    "bookOptionsLabelsFilledHint": "Ausgefüllte benutzerdefinierte Bezeichnungen",
     "sectionOrder": "Abschnittsreihenfolge",
     "sectionOrderHint": "Ziehen zum Sortieren (nur aktive Abschnitte).",
     "customLabels": "Dokumentbeschriftungen (optional)",
@@ -102,11 +115,24 @@
     "dropCapFirstPara": { "label": "Initialbuchstabe im ersten Absatz" },
     "lineSpacingPreset": {
       "label": "Zeilenabstand",
-      "values": { "standard": "Standard", "narrow": "Eng", "wide": "Weit" }
+      "values": {
+        "standard": "Standard",
+        "narrow": "Eng",
+        "wide": "Weit",
+        "custom": "Benutzerdefiniert (Zahl)"
+      }
     },
+    "lineSpacingEm": { "label": "Zeilenhöhe (em, bei Benutzerdefiniert)" },
     "bodyTextAlignment": {
       "label": "Textausrichtung (Fließtext)",
-      "values": { "justify": "Blocksatz", "left": "Linksbündig", "center": "Zentriert" }
+      "values": {
+        "left": "Linksbündig",
+        "right": "Rechtsbündig",
+        "center": "Zentriert",
+        "justify": "Blocksatz",
+        "justify-last-left": "Blocksatz — letzte Zeile links",
+        "justify-last-right": "Blocksatz — letzte Zeile rechts"
+      }
     },
     "markdownHorizontalRule": {
       "label": "Markdown-Trennlinie (`---`)",

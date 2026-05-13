@@ -36,6 +36,7 @@ export const BOOK_OPTION_SECTION_IDS = {
         "h1-typography",
         "drop-cap-first-para",
         "line-spacing-preset",
+        "line-spacing-em",
         "body-text-alignment",
         "markdown-horizontal-rule",
         "accent-color",

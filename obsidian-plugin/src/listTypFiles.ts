@@ -1,10 +1,13 @@
-import { nodeFs, nodePath } from "./platform.js";
+import { tryNodeFs, tryNodePath } from "./platform.js";
 
-/** Chemins projet relatifs `typeset/typst/cover/*.typ` ou `impose`. */
+/** Chemins projet relatifs `typeset/cover/*.typ` ou `impose`. */
 export function listTypFiles(bundleRoot: string, kind: "cover" | "impose"): string[] {
-  const fs = nodeFs();
-  const path = nodePath();
-  const dir = path.join(bundleRoot, "typeset", "typst", kind);
+  const fs = tryNodeFs();
+  const path = tryNodePath();
+  if (!fs || !path) return [];
+  const flat = path.join(bundleRoot, "typeset", kind);
+  const legacy = path.join(bundleRoot, "typeset", "typst", kind);
+  const dir = fs.existsSync(flat) ? flat : legacy;
   if (!fs.existsSync(dir)) return [];
   const out: string[] = [];
   const stack = [dir];

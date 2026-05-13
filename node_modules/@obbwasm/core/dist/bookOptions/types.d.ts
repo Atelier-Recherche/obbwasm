@@ -3,7 +3,7 @@ export type UiLocale = "fr" | "en" | "de" | "es";
 export type DocumentLang = UiLocale;
 /** Sections globales ordonnables (ids stables). */
 export type SectionId = "cover" | "titleCredits" | "toc" | "body" | "annexes" | "listFigures" | "bibliography" | "indexGlossary" | "backCover";
-export type OptionKind = "bool" | "enum" | "string" | "color";
+export type OptionKind = "bool" | "enum" | "string" | "color" | "number";
 export type BookOptionDef = {
     id: string;
     kind: OptionKind;

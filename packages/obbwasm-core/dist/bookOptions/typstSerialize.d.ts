@@ -1,5 +1,7 @@
 import type { BookLayoutState, SectionId } from "./types";
 import type { StringOverrideKey } from "./registry";
+/** Valeur numérique pour `line-spacing: Xem` (preset custom). */
+export declare function clampLineSpacingEmString(raw: string): string;
 /** Garantit la section `body` (contenu Pandoc) dans l’ordre émis vers Typst. */
 export declare function ensureSectionOrderForTypst(order: SectionId[]): SectionId[];
 /**

@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "name": "Garamond B5 — roman (FR, exemple)",
+  "createdAt": "2026-05-13T12:00:00.000Z",
+  "bookCompileMeta": {
+    "title": "Titre du livre",
+    "author": "Auteur ou autrice",
+    "publisher": "Éditions exemple"
+  },
+  "vaultCompilePaths": {
+    "bibliographyVaultPath": "Livre/refs.bib",
+    "cslVaultPath": "Livre/apa.csl",
+    "glossaryVaultPath": "Livre/glossaire.md",
+    "nameIndexVaultPath": "Livre/index-noms.md"
+  },
+  "payload": {
+    "documentLang": "fr",
+    "stringOverrides": {},
+    "sectionOrder": ["titleCredits", "toc", "body", "bibliography", "indexGlossary"],
+    "values": {
+      "chapter-title-in-header": true,
+      "page-number-placement": "outer",
+      "header-footer-rule": "none",
+      "page-number-style": "arabic",
+      "auto-heading-numbering": false,
+      "h1-typography": "centered",
+      "drop-cap-first-para": true,
+      "line-spacing-preset": "wide",
+      "line-spacing-em": "1.2",
+      "body-text-alignment": "justify-last-left",
+      "markdown-horizontal-rule": "line",
+      "chapter-start-odd": true,
+      "binding-gutter-mm": "5",
+      "transition-blank-style": "empty",
+      "caption-position": "below",
+      "footnote-scope": "document",
+      "image-treatment": "auto-margins",
+      "accent-color": "#333333",
+      "show-index": true,
+      "list-figures-style": "none",
+      "show-glossary": true,
+      "cover-page": false,
+      "half-title-page": true,
+      "title-page": true,
+      "front-title-recto-with-blank-before": false,
+      "section-new-page": true,
+      "section-title-recto-with-blank-before": false,
+      "toc-position": "start",
+      "toc-depth": "3",
+      "bibliography-position": "end",
+      "widows-orphans": "on",
+      "show-annexes": false,
+      "show-back-cover": false
+    }
+  }
+}

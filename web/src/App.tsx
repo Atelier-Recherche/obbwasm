@@ -34,6 +34,7 @@ import {
   reconcileSectionOrder,
   applyTocAndBibPlacement,
   syncPlacementValuesFromSectionOrder,
+  expandDependentBookOptionIds,
   fetchCachedArrayBuffer,
   compileTypstBookToPdf,
   pandocMarkdownToTypst,
@@ -55,6 +56,7 @@ import { PdfPageViewer } from "./PdfPageViewer";
 import { WasmIcon } from "./WasmIcon";
 import { TemplatePicker } from "./TemplatePicker";
 import { useI18n } from "./i18n/context";
+import { BookLayoutPresetsWeb } from "./components/BookLayoutPresetsWeb";
 import { BookOptionsForm } from "./components/BookOptionsForm";
 import { SectionOrderList } from "./components/SectionOrderList";
 import { LanguageSelector } from "./components/LanguageSelector";
@@ -149,8 +151,8 @@ export default function App() {
   const [tab, setTab] = useState<TabId>("contenu");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
-  const [selectedCoverTemplatePath, setSelectedCoverTemplatePath] = useState("typeset/typst/cover/Garamond-brsnoba5-cover-A3.typ");
-  const [selectedImpositionTemplatePath, setSelectedImpositionTemplatePath] = useState("typeset/typst/impose/brsnoba5-A4-4spread.typ");
+  const [selectedCoverTemplatePath, setSelectedCoverTemplatePath] = useState("typeset/cover/Garamond-brsnoba5-cover-A3.typ");
+  const [selectedImpositionTemplatePath, setSelectedImpositionTemplatePath] = useState("typeset/impose/brsnoba5-A4-4spread.typ");
   const [sourceText, setSourceText] = useState("");
   const [sourceFileBlob, setSourceFileBlob] = useState<File | null>(null);
   const [sourceFileName, setSourceFileName] = useState("");
@@ -219,7 +221,7 @@ export default function App() {
     const supported = templateMetaById[selectedTemplate]?.supportedOptions ?? [];
     const all = BOOK_OPTIONS.map((o) => o.id);
     const filtered = filterOptionIdsByTemplate(all, supported);
-    return mergeVisibleBookOptionIds(filtered);
+    return mergeVisibleBookOptionIds(expandDependentBookOptionIds(filtered));
   }, [selectedTemplate, templateMetaById]);
 
   const imageRefs = useMemo(() => extractMarkdownImages(sourceText), [sourceText]);
@@ -234,15 +236,15 @@ export default function App() {
   const coverTemplateChoices = useMemo(() => {
     const layoutPath = selectedTemplateObj?.mainTypPath ?? "";
     if (layoutPath.includes("Garamond-brsnoba5-layout.typ")) {
-      return [{ id: "typeset/typst/cover/Garamond-brsnoba5-cover-A3.typ", name: "Garamond brsnoba5 - Cover A3" }];
+      return [{ id: "typeset/cover/Garamond-brsnoba5-cover-A3.typ", name: "Garamond brsnoba5 - Cover A3" }];
     }
-    return [{ id: "typeset/typst/cover/Garamond-brsnoba5-cover-A3.typ", name: "Garamond brsnoba5 - Cover A3" }];
+    return [{ id: "typeset/cover/Garamond-brsnoba5-cover-A3.typ", name: "Garamond brsnoba5 - Cover A3" }];
   }, [selectedTemplateObj?.mainTypPath]);
 
   const impositionTemplateChoices = useMemo(() => {
     return [
-      { id: "typeset/typst/impose/brsnoba5-A4-4spread.typ", name: "brsnoba5 A4 - 4spread" },
-      { id: "typeset/typst/impose/brsnoba5-A4-4signature.typ", name: "brsnoba5 A4 - 4signature" },
+      { id: "typeset/impose/brsnoba5-A4-4spread.typ", name: "brsnoba5 A4 - 4spread" },
+      { id: "typeset/impose/brsnoba5-A4-4signature.typ", name: "brsnoba5 A4 - 4signature" },
     ];
   }, []);
 
@@ -1363,6 +1365,19 @@ export default function App() {
               bookLayout={bookLayout}
               setBookLayout={setBookLayout}
               patchBookValues={patchBookValues}
+            />
+            <BookLayoutPresetsWeb
+              apiBase={apiBase}
+              apiFetch={apiFetch}
+              authUser={authUser}
+              bookLayout={bookLayout}
+              setBookLayout={setBookLayout}
+              bookCompileMeta={{ title, author, publisher }}
+              onBookCompileMetaLoaded={(meta) => {
+                if (meta.title !== undefined) setTitle(meta.title);
+                if (meta.author !== undefined) setAuthor(meta.author);
+                if (meta.publisher !== undefined) setPublisher(meta.publisher);
+              }}
             />
             <h3>{t("ui.sectionOrder")}</h3>
             <p className="sub">{t("ui.sectionOrderHint")}</p>

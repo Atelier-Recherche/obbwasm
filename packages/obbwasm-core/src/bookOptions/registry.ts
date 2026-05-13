@@ -56,15 +56,28 @@ export const BOOK_OPTIONS: BookOptionDef[] = [
     id: "line-spacing-preset",
     kind: "enum",
     typstKey: "line-spacing-preset",
-    enumValues: ["standard", "narrow", "wide"],
+    enumValues: ["standard", "narrow", "wide", "custom"],
     labelKey: "lineSpacingPreset",
     enumValueKeys: true,
+  },
+  {
+    id: "line-spacing-em",
+    kind: "number",
+    typstKey: "line-spacing-em",
+    labelKey: "lineSpacingEm",
   },
   {
     id: "body-text-alignment",
     kind: "enum",
     typstKey: "body-text-alignment",
-    enumValues: ["justify", "left", "center"],
+    enumValues: [
+      "left",
+      "right",
+      "center",
+      "justify",
+      "justify-last-left",
+      "justify-last-right",
+    ],
     labelKey: "bodyTextAlignment",
     enumValueKeys: true,
   },
@@ -252,4 +265,11 @@ export const PIPELINE_ONLY_BOOK_OPTION_IDS: readonly string[] = ["markdown-horiz
 
 export function mergeVisibleBookOptionIds(templateFilteredIds: string[]): string[] {
   return [...new Set([...templateFilteredIds, ...PIPELINE_ONLY_BOOK_OPTION_IDS])];
+}
+
+/** Ajoute des options dépendantes (ex. interligne numérique si preset custom). */
+export function expandDependentBookOptionIds(ids: string[]): string[] {
+  const s = new Set(ids);
+  if (s.has("line-spacing-preset")) s.add("line-spacing-em");
+  return [...s];
 }

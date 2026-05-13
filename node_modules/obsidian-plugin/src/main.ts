@@ -1,4 +1,5 @@
 import {
+  BOOK_PRESETS_RELATIVE_DIR,
   buildImpositionMainTyp,
   chunkArray,
   compileTypstBookToPdf,
@@ -11,6 +12,10 @@ import {
   pandocMarkdownToTypst,
   markdownHorizontalRuleFromBookValues,
   normalizeWikiImagesForPandoc,
+  normalizeBookCompileMeta,
+  normalizeVaultCompilePaths,
+  parseBookLayoutPresetJson,
+  normalizePresetPayload,
   parseImpositionTemplateSpec,
   parseTemplateMeta,
   applyTocAndBibPlacement,
@@ -18,16 +23,20 @@ import {
   reorderSpreadSequence,
   resetTypstWasmImporterRegistration,
   spineThicknessMm,
+  type BookCompileMeta,
   type BookLayoutState,
   type TemplateMeta,
+  type VaultCompilePaths,
 } from "@obbwasm/core";
 import type { TypstCompiler } from "@myriaddreamin/typst.ts";
 import JSZip from "jszip";
 import {
+  FileView,
   ItemView,
   Notice,
   Plugin,
   PluginSettingTab,
+  Platform,
   Setting,
   WorkspaceLeaf,
   normalizePath,
@@ -36,19 +45,59 @@ import {
   type FileSystemAdapter,
   type TFile,
 } from "obsidian";
+import { mountBookLayoutPresetsPanel, type PresetLoadDetail, type StoredBookPreset } from "./bookLayoutPresetsPanel.js";
 import { mountBookOptionsPanel, mountSectionOrderPanel } from "./bookOptionsPanel.js";
 import { createFsAssetLoader } from "./fsAssetLoader.js";
 import { EMBEDDED_TEMPLATES_MANIFEST } from "./embeddedTemplatesManifest.js";
 import frLocale from "./locales/fr.json";
 import { extractTypesetFromGithubRepoZip } from "./githubArchive.js";
+import { migrateLegacyTypesetPath } from "./legacyTypesetPaths.js";
 import { listTypFiles } from "./listTypFiles.js";
-import { nodeFs, nodePath } from "./platform.js";
+import { mergeManifestWithLocalDiscovered } from "./localTemplates.js";
+import { nodeFs, nodePath, tryNodeFs, tryNodePath } from "./platform.js";
 import { countPdfPages } from "./pdfPageCount.js";
 import type { TemplatesManifestV1 } from "./templatesManifest.js";
 import { DEFAULT_TEMPLATES_MANIFEST_URL, GITHUB_REPO_ARCHIVE_MAIN } from "./urls.js";
 import { PANDOC_WASM_DOWNLOAD_URL, TYPST_COMPILER_WASM_DOWNLOAD_URL } from "./wasmFetch.js";
 
 export const VIEW_TYPE_OBB = "obbwasm-book-preview";
+
+/** Chemins normalisés comparables (casse Windows pour chemins coffre). */
+function vaultPathsEqual(a: string, b: string): boolean {
+  const x = normalizePath(a).replace(/\\/g, "/");
+  const y = normalizePath(b).replace(/\\/g, "/");
+  if (Platform.isWin) return x.toLowerCase() === y.toLowerCase();
+  return x === y;
+}
+
+/**
+ * Chemins de fichier qu’un onglet est susceptible d’afficher (volet différé inclus :
+ * `view.file` peut être absent alors que `getViewState().state.file` contient déjà le chemin).
+ */
+function collectOpenFilePathsFromLeaf(leaf: WorkspaceLeaf): string[] {
+  const paths: string[] = [];
+  const st = leaf.getViewState();
+  if (st.type === VIEW_TYPE_OBB) return paths;
+
+  const state = st.state as Record<string, unknown> | undefined;
+  const sf = state?.file;
+  if (typeof sf === "string") paths.push(sf);
+  else if (sf && typeof sf === "object" && "path" in sf && typeof (sf as { path: unknown }).path === "string") {
+    paths.push((sf as { path: string }).path);
+  }
+
+  const view = leaf.view;
+  if (view instanceof FileView && view.file) paths.push(view.file.path);
+  return paths;
+}
+
+function requireDesktopFs(): void {
+  if (!tryNodeFs()) {
+    throw new Error(
+      "Cette action nécessite Obsidian bureau (accès fichiers local). Sur mobile, elle n’est pas encore disponible.",
+    );
+  }
+}
 
 function validateWasmPath(fs: typeof import("node:fs"), absPath: string, label: string): void {
   const p = absPath?.trim();
@@ -193,6 +242,8 @@ interface ObbWasmPluginSettings {
   glossaryVaultPath: string;
   /** Note « index » des noms : sections `# entrée` + notice (`[[index#entrée]]`). */
   nameIndexVaultPath: string;
+  /** Préréglages de mise en page sauvegardés dans l’extension (JSON tableau). */
+  bookPresetsStoredJson: string;
 }
 
 const DEFAULT_SETTINGS: ObbWasmPluginSettings = {
@@ -214,6 +265,7 @@ const DEFAULT_SETTINGS: ObbWasmPluginSettings = {
   cslVaultPath: "",
   glossaryVaultPath: "",
   nameIndexVaultPath: "",
+  bookPresetsStoredJson: "",
 };
 
 export default class ObbWasmBookPlugin extends Plugin {
@@ -270,12 +322,18 @@ export default class ObbWasmBookPlugin extends Plugin {
   }
 
   getDefaultTemplatesRoot(): string {
-    const path = nodePath();
-    return path.join(this.pluginDir(), "bundle");
+    try {
+      const path = nodePath();
+      return path.join(this.pluginDir(), "bundle");
+    } catch {
+      return "";
+    }
   }
 
   resolveTemplatesRoot(): string {
-    return this.settings.templatesRoot.trim() || this.getDefaultTemplatesRoot();
+    const t = this.settings.templatesRoot.trim();
+    if (t) return t;
+    return this.getDefaultTemplatesRoot();
   }
 
   async loadSettings(): Promise<void> {
@@ -284,18 +342,29 @@ export default class ObbWasmBookPlugin extends Plugin {
     if (!this.settings.bookLayoutJson) {
       this.settings.bookLayoutJson = JSON.stringify(defaultBookLayoutState());
     }
-    const fs = nodeFs();
-    const path = nodePath();
-    const dataDir = this.getDataDir();
-    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-    if (!this.settings.pandocWasmPath) {
-      this.settings.pandocWasmPath = path.join(dataDir, "pandoc.wasm");
+    if (!this.settings.bookPresetsStoredJson) {
+      this.settings.bookPresetsStoredJson = "";
     }
-    if (!this.settings.typstWasmPath) {
-      this.settings.typstWasmPath = path.join(dataDir, "typst_ts_web_compiler_bg.wasm");
-    }
-    if (!this.settings.templatesRoot) {
-      this.settings.templatesRoot = this.getDefaultTemplatesRoot();
+    this.settings.selectedCoverTemplatePath = migrateLegacyTypesetPath(this.settings.selectedCoverTemplatePath);
+    this.settings.selectedImpositionTemplatePath = migrateLegacyTypesetPath(
+      this.settings.selectedImpositionTemplatePath,
+    );
+    try {
+      const fs = nodeFs();
+      const path = nodePath();
+      const dataDir = this.getDataDir();
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      if (!this.settings.pandocWasmPath) {
+        this.settings.pandocWasmPath = path.join(dataDir, "pandoc.wasm");
+      }
+      if (!this.settings.typstWasmPath) {
+        this.settings.typstWasmPath = path.join(dataDir, "typst_ts_web_compiler_bg.wasm");
+      }
+      if (!this.settings.templatesRoot) {
+        this.settings.templatesRoot = this.getDefaultTemplatesRoot();
+      }
+    } catch {
+      /* Obsidian mobile / sandbox : pas de require('fs'). */
     }
     const g = Number(this.settings.grammage);
     this.settings.grammage = [80, 100, 120].includes(g) ? g : 80;
@@ -309,10 +378,11 @@ export default class ObbWasmBookPlugin extends Plugin {
 
   /** Si le bundle contient des .typ couverture / imposition, préremplit les sélections vides. */
   async ensureCoverImpositionDefaults(): Promise<void> {
-    const fs = nodeFs();
-    const path = nodePath();
+    const fs = tryNodeFs();
+    const path = tryNodePath();
+    if (!fs || !path) return;
     const root = this.settings.templatesRoot.trim() || this.getDefaultTemplatesRoot();
-    if (!fs.existsSync(path.join(root, "typeset"))) return;
+    if (!root || !fs.existsSync(path.join(root, "typeset"))) return;
     const covers = listTypFiles(root, "cover");
     const imposes = listTypFiles(root, "impose");
     let dirty = false;
@@ -344,28 +414,44 @@ export default class ObbWasmBookPlugin extends Plugin {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   }
 
+  private mergeManifestWithLocals(base: TemplatesManifestV1): TemplatesManifestV1 {
+    const fs = tryNodeFs();
+    const path = tryNodePath();
+    if (!fs || !path) return base;
+    try {
+      const root = this.resolveTemplatesRoot();
+      if (!root) return base;
+      return mergeManifestWithLocalDiscovered(base, root, fs, path);
+    } catch {
+      return base;
+    }
+  }
+
   /**
    * Manifest pour la liste des gabarits : fichier cache dans le dossier plugin,
    * sinon copie embarquée (évite liste vide si le JSON distant est indisponible).
    */
   resolveTemplatesManifest(): TemplatesManifestV1 {
-    const fs = nodeFs();
-    const path = nodePath();
-    const cached = path.join(this.pluginDir(), "templates-manifest.cached.json");
-    if (fs.existsSync(cached)) {
+    let base: TemplatesManifestV1 = EMBEDDED_TEMPLATES_MANIFEST;
+    const fs = tryNodeFs();
+    const path = tryNodePath();
+    if (fs && path) {
       try {
-        const raw = fs.readFileSync(cached, "utf8");
-        const json = JSON.parse(raw) as TemplatesManifestV1;
-        if (json.version === 1 && Array.isArray(json.templates) && json.templates.length > 0) {
-          this.cachedManifest = json;
-          return json;
+        const cached = path.join(this.pluginDir(), "templates-manifest.cached.json");
+        if (fs.existsSync(cached)) {
+          const raw = fs.readFileSync(cached, "utf8");
+          const json = JSON.parse(raw) as TemplatesManifestV1;
+          if (json.version === 1 && Array.isArray(json.templates) && json.templates.length > 0) {
+            base = json;
+          }
         }
       } catch {
-        /* fallback embarqué */
+        /* garde embarqué */
       }
     }
-    this.cachedManifest = EMBEDDED_TEMPLATES_MANIFEST;
-    return EMBEDDED_TEMPLATES_MANIFEST;
+    const merged = this.mergeManifestWithLocals(base);
+    this.cachedManifest = merged;
+    return merged;
   }
 
   /** Lit le `.typ` du gabarit sélectionné pour savoir quelles options afficher. */
@@ -445,11 +531,18 @@ export default class ObbWasmBookPlugin extends Plugin {
       if (res.status !== 200 || !res.text) return null;
       const json = JSON.parse(res.text) as TemplatesManifestV1;
       if (json.version !== 1 || !Array.isArray(json.templates)) return null;
-      this.cachedManifest = json;
-      const fs = nodeFs();
-      const path = nodePath();
-      fs.writeFileSync(path.join(this.pluginDir(), "templates-manifest.cached.json"), res.text, "utf8");
-      return json;
+      const merged = this.mergeManifestWithLocals(json);
+      this.cachedManifest = merged;
+      const fs = tryNodeFs();
+      const path = tryNodePath();
+      if (fs && path) {
+        try {
+          fs.writeFileSync(path.join(this.pluginDir(), "templates-manifest.cached.json"), res.text, "utf8");
+        } catch {
+          /* ignore */
+        }
+      }
+      return merged;
     } catch {
       return null;
     }
@@ -475,6 +568,7 @@ export default class ObbWasmBookPlugin extends Plugin {
    * Utilise uniquement `requestUrl` (pas `fetch`) pour éviter la CORS depuis `app://obsidian.md`.
    */
   async downloadTemplates(): Promise<void> {
+    requireDesktopFs();
     const fs = nodeFs();
     const path = nodePath();
     let zipUrl = GITHUB_REPO_ARCHIVE_MAIN;
@@ -494,7 +588,7 @@ export default class ObbWasmBookPlugin extends Plugin {
     const n = await extractTypesetFromGithubRepoZip(zip, root, fs, path);
     if (n === 0) {
       throw new Error(
-        "Aucun dossier typeset/typst/ reconnu dans le ZIP — vérifiez le dépôt.",
+        "Aucun dossier typeset reconnu dans le ZIP (attendu : typeset/layout/… ou typeset/typst/…) — vérifiez le dépôt.",
       );
     }
 
@@ -506,7 +600,9 @@ export default class ObbWasmBookPlugin extends Plugin {
     if (!gotRemoteManifest) {
       const snap = JSON.stringify(EMBEDDED_TEMPLATES_MANIFEST, null, 2);
       fs.writeFileSync(path.join(this.pluginDir(), "templates-manifest.cached.json"), snap, "utf8");
-      this.cachedManifest = EMBEDDED_TEMPLATES_MANIFEST;
+      this.cachedManifest = this.mergeManifestWithLocals(EMBEDDED_TEMPLATES_MANIFEST);
+    } else {
+      this.cachedManifest = this.mergeManifestWithLocals(this.cachedManifest ?? EMBEDDED_TEMPLATES_MANIFEST);
     }
 
     this.typstCompiler = null;
@@ -648,7 +744,185 @@ export default class ObbWasmBookPlugin extends Plugin {
     return { bibliography, csl };
   }
 
+  /** Applique chemins coffre + métadonnées livre issus d’un préréglage (plugin). */
+  applyPresetCompileFields(vault?: VaultCompilePaths, meta?: BookCompileMeta): void {
+    if (vault && Object.keys(vault).length > 0) {
+      if (typeof vault.bibliographyVaultPath === "string") {
+        this.settings.bibliographyVaultPath = vault.bibliographyVaultPath;
+      }
+      if (typeof vault.cslVaultPath === "string") {
+        this.settings.cslVaultPath = vault.cslVaultPath;
+      }
+      if (typeof vault.glossaryVaultPath === "string") {
+        this.settings.glossaryVaultPath = vault.glossaryVaultPath;
+      }
+      if (typeof vault.nameIndexVaultPath === "string") {
+        this.settings.nameIndexVaultPath = vault.nameIndexVaultPath;
+      }
+    }
+    if (meta && Object.keys(meta).length > 0) {
+      if (typeof meta.title === "string") this.settings.title = meta.title;
+      if (typeof meta.author === "string") this.settings.author = meta.author;
+      if (typeof meta.publisher === "string") this.settings.publisher = meta.publisher;
+    }
+  }
+
+  parseStoredBookPresets(): StoredBookPreset[] {
+    try {
+      const raw = this.settings.bookPresetsStoredJson?.trim();
+      if (!raw) return [];
+      const arr = JSON.parse(raw) as unknown;
+      if (!Array.isArray(arr)) return [];
+      const out: StoredBookPreset[] = [];
+      for (const row of arr) {
+        if (!row || typeof row !== "object") continue;
+        const o = row as Record<string, unknown>;
+        const id = typeof o.id === "string" ? o.id : "";
+        const name = typeof o.name === "string" ? o.name : "Sans nom";
+        const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : "";
+        const payload = o.payload;
+        if (!id || !payload || typeof payload !== "object") continue;
+        const pl = payload as BookLayoutState;
+        const def = defaultBookLayoutState();
+        const vaultRaw = o.vaultCompilePaths;
+        const vaultCompilePaths =
+          vaultRaw !== undefined && vaultRaw !== null ? normalizeVaultCompilePaths(vaultRaw) : undefined;
+        const metaRaw = o.bookCompileMeta;
+        const bookCompileMeta =
+          metaRaw !== undefined && metaRaw !== null ? normalizeBookCompileMeta(metaRaw) : undefined;
+        out.push({
+          id,
+          name,
+          updatedAt,
+          payload: {
+            ...def,
+            ...pl,
+            values: { ...def.values, ...pl.values },
+            stringOverrides: { ...def.stringOverrides, ...pl.stringOverrides },
+            sectionOrder: pl.sectionOrder ?? def.sectionOrder,
+          },
+          vaultCompilePaths:
+            vaultCompilePaths && Object.keys(vaultCompilePaths).length > 0 ? vaultCompilePaths : undefined,
+          bookCompileMeta: bookCompileMeta && Object.keys(bookCompileMeta).length > 0 ? bookCompileMeta : undefined,
+        });
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  private persistStoredBookPresets(list: StoredBookPreset[]): void {
+    this.settings.bookPresetsStoredJson = JSON.stringify(list);
+  }
+
+  async saveBookLayoutPreset(name: string, overwriteId?: string): Promise<void> {
+    const cur = this.parseBookLayout();
+    const list = this.parseStoredBookPresets();
+    const trimmed = name.trim() || "Préréglage";
+    const entry = {
+      name: trimmed,
+      updatedAt: new Date().toISOString(),
+      payload: cur,
+      vaultCompilePaths: {
+        bibliographyVaultPath: this.settings.bibliographyVaultPath,
+        cslVaultPath: this.settings.cslVaultPath,
+        glossaryVaultPath: this.settings.glossaryVaultPath,
+        nameIndexVaultPath: this.settings.nameIndexVaultPath,
+      },
+      bookCompileMeta: {
+        title: this.settings.title,
+        author: this.settings.author,
+        publisher: this.settings.publisher,
+      },
+    };
+    if (overwriteId) {
+      const ix = list.findIndex((x) => x.id === overwriteId);
+      if (ix < 0) throw new Error("Préréglage à remplacer introuvable.");
+      list[ix] = { ...list[ix], ...entry };
+    } else {
+      const dup = list.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+      if (dup) {
+        throw new Error("Préréglage en double : utilisez la confirmation d’écrasement.");
+      }
+      const id = `p_${Date.now().toString(36)}`;
+      list.push({ id, ...entry });
+    }
+    this.persistStoredBookPresets(list);
+    await this.saveSettings();
+  }
+
+  async loadBookLayoutPreset(id: string): Promise<void> {
+    const p = this.parseStoredBookPresets().find((x) => x.id === id);
+    if (!p) throw new Error("Préréglage introuvable.");
+    const def = defaultBookLayoutState();
+    const merged: BookLayoutState = {
+      ...def,
+      ...p.payload,
+      values: { ...def.values, ...p.payload.values },
+      stringOverrides: { ...def.stringOverrides, ...p.payload.stringOverrides },
+      sectionOrder: p.payload.sectionOrder ?? def.sectionOrder,
+    };
+    merged.sectionOrder = reconcileSectionOrder(merged.sectionOrder, merged.values);
+    this.settings.bookLayoutJson = JSON.stringify(merged);
+    this.applyPresetCompileFields(p.vaultCompilePaths, p.bookCompileMeta);
+    await this.saveSettings();
+  }
+
+  async deleteBookLayoutPreset(id: string): Promise<void> {
+    const list = this.parseStoredBookPresets().filter((x) => x.id !== id);
+    this.persistStoredBookPresets(list);
+    await this.saveSettings();
+  }
+
+  listBookPresetFiles(): { relPath: string; label: string }[] {
+    const fs = tryNodeFs();
+    const path = tryNodePath();
+    if (!fs || !path) return [];
+    const root = this.resolveTemplatesRoot();
+    if (!root) return [];
+    const dir = path.join(root, BOOK_PRESETS_RELATIVE_DIR);
+    if (!fs.existsSync(dir)) return [];
+    const out: { relPath: string; label: string }[] = [];
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.toLowerCase().endsWith(".json")) continue;
+      const rel = path.relative(root, path.join(dir, name)).replace(/\\/g, "/");
+      out.push({ relPath: rel, label: name });
+    }
+    out.sort((a, b) => a.relPath.localeCompare(b.relPath));
+    return out;
+  }
+
+  async loadBookLayoutPresetFromFile(relPath: string): Promise<void> {
+    requireDesktopFs();
+    const fs = nodeFs();
+    const path = nodePath();
+    const norm = relPath.replace(/\\/g, "/");
+    if (!norm.startsWith(`${BOOK_PRESETS_RELATIVE_DIR}/`)) {
+      throw new Error("Fichier préréglage : chemin doit être sous typeset/presets/.");
+    }
+    const root = this.resolveTemplatesRoot();
+    const full = path.join(root, norm);
+    const raw = fs.readFileSync(full, "utf8");
+    const parsed = parseBookLayoutPresetJson(raw);
+    if (!parsed) throw new Error("JSON préréglage invalide (version ou schéma).");
+    const payload = normalizePresetPayload(parsed.payload);
+    const def = defaultBookLayoutState();
+    const merged: BookLayoutState = {
+      ...def,
+      ...payload,
+      values: { ...def.values, ...payload.values },
+      stringOverrides: { ...def.stringOverrides, ...payload.stringOverrides },
+      sectionOrder: payload.sectionOrder ?? def.sectionOrder,
+    };
+    merged.sectionOrder = reconcileSectionOrder(merged.sectionOrder, merged.values);
+    this.settings.bookLayoutJson = JSON.stringify(merged);
+    this.applyPresetCompileFields(parsed.vaultCompilePaths, parsed.bookCompileMeta);
+    await this.saveSettings();
+  }
+
   async compileActiveNoteToPdf(): Promise<{ pdf: Uint8Array; fileBase: string; folder: string }> {
+    requireDesktopFs();
     const file = this.app.workspace.getActiveFile();
     if (!file) throw new Error("Aucun fichier actif.");
     const text = await this.app.vault.read(file);
@@ -745,6 +1019,7 @@ export default class ObbWasmBookPlugin extends Plugin {
   }
 
   async compileCoverPdf(): Promise<Uint8Array> {
+    requireDesktopFs();
     const loader = createFsAssetLoader(this.resolveTemplatesRoot());
     const rel = this.settings.selectedCoverTemplatePath.trim();
     if (!rel) throw new Error("Choisissez un gabarit de couverture (.typ).");
@@ -782,6 +1057,7 @@ export default class ObbWasmBookPlugin extends Plugin {
   }
 
   async compileImpositionPdf(): Promise<Uint8Array> {
+    requireDesktopFs();
     const bytes = this.lastInteriorPdf;
     if (!bytes?.length) {
       throw new Error("Générez d’abord le PDF intérieur (« Compiler la note active »).");
@@ -824,20 +1100,57 @@ export default class ObbWasmBookPlugin extends Plugin {
     return Uint8Array.from(compiled.result);
   }
 
-  /** Enregistre un PDF auxiliaire à côté de la note active (suffixe avant `.pdf`). */
-  async saveAuxPdf(pdf: Uint8Array, suffix: string): Promise<string> {
+  /** Chemin coffre normalisé du PDF auxiliaire pour la note active (`suffix` ex. `-obb`). */
+  getAuxPdfDestPath(suffix: string): string {
     const file = this.app.workspace.getActiveFile();
     const base = file?.basename.replace(/\.md$/i, "") ?? "export";
     const folder = file?.parent?.path ?? "";
-    const dest = normalizePath(folder ? `${folder}/${base}${suffix}.pdf` : `${base}${suffix}.pdf`);
+    return normalizePath(folder ? `${folder}/${base}${suffix}.pdf` : `${base}${suffix}.pdf`);
+  }
+
+  /**
+   * Indique si ce fichier du coffre est ouvert dans un onglet (visionneuse PDF, etc.).
+   * Ne se limite pas à `type === "pdf"` : les volets différés n’exposent pas toujours la vue PDF réelle.
+   */
+  isPdfOpenInWorkspace(vaultRelativePath: string): boolean {
+    let found = false;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (found) return;
+      for (const p of collectOpenFilePathsFromLeaf(leaf)) {
+        if (vaultPathsEqual(p, vaultRelativePath)) {
+          found = true;
+          return;
+        }
+      }
+    });
+    return found;
+  }
+
+  /** Enregistre un PDF auxiliaire à côté de la note active (suffixe avant `.pdf`). */
+  async saveAuxPdf(pdf: Uint8Array, suffix: string): Promise<string> {
+    const dest = this.getAuxPdfDestPath(suffix);
+    if (this.isPdfOpenInWorkspace(dest)) {
+      throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
+    }
     const outBin = new Uint8Array(pdf.byteLength);
     outBin.set(pdf);
     const buf = outBin.buffer.slice(outBin.byteOffset, outBin.byteOffset + outBin.byteLength);
     const existing = this.app.vault.getAbstractFileByPath(dest);
-    if (existing && "extension" in existing) {
-      await this.app.vault.modifyBinary(existing as TFile, buf);
-    } else {
-      await this.app.vault.createBinary(dest, buf);
+    try {
+      if (existing && "extension" in existing) {
+        await this.app.vault.modifyBinary(existing as TFile, buf);
+      } else {
+        await this.app.vault.createBinary(dest, buf);
+      }
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      if (this.isPdfOpenInWorkspace(dest)) {
+        throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
+      }
+      if (/EBUSY|EPERM|locked|being used|accès refusé|denied|in use/i.test(raw)) {
+        throw new Error(`${frLocale.ui.savePdfBlockedOpenViewer} (${raw})`);
+      }
+      throw e;
     }
     return dest;
   }
@@ -878,6 +1191,13 @@ class ObbBookView extends ItemView {
   private innerPagesInput!: HTMLInputElement;
   private bookOptsRoot!: HTMLElement;
   private sectionOrderRoot!: HTMLElement;
+  private metaInputs!: { title: HTMLInputElement; author: HTMLInputElement; publisher: HTMLInputElement };
+  private citeVaultInputs!: {
+    bib: HTMLInputElement;
+    csl: HTMLInputElement;
+    glossary: HTMLInputElement;
+    nameIndex: HTMLInputElement;
+  };
   /** Sections repliables des options livre (persistant lors des reconstructions). */
   private bookOptSectionOpen: Partial<Record<string, boolean>> = {};
   /** Dernière URL blob de l’aperçu PDF — révoquée avec délai pour éviter un crash iframe. */
@@ -907,6 +1227,21 @@ class ObbBookView extends ItemView {
     }
   }
 
+  /** Libère l’aperçu blob (évite conflits avec l’écriture du PDF sur disque). */
+  private clearPdfPreview(): void {
+    if (this.previewBlobUrl?.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(this.previewBlobUrl);
+      } catch {
+        /* */
+      }
+    }
+    this.previewBlobUrl = null;
+    if (this.frame) {
+      this.frame.src = "about:blank";
+    }
+  }
+
   private async patchBookValues(patch: Partial<Record<string, boolean | string>>): Promise<void> {
     const layout = this.plugin.parseBookLayout();
     const nextValues: Record<string, boolean | string> = { ...layout.values };
@@ -924,6 +1259,17 @@ class ObbBookView extends ItemView {
     });
     await this.plugin.saveSettings();
     await this.rebuildBookOptionsUI();
+  }
+
+  private syncCompileFieldsFromPluginSettings(): void {
+    const s = this.plugin.settings;
+    this.metaInputs.title.value = s.title;
+    this.metaInputs.author.value = s.author;
+    this.metaInputs.publisher.value = s.publisher;
+    this.citeVaultInputs.bib.value = s.bibliographyVaultPath;
+    this.citeVaultInputs.csl.value = s.cslVaultPath;
+    this.citeVaultInputs.glossary.value = s.glossaryVaultPath;
+    this.citeVaultInputs.nameIndex.value = s.nameIndexVaultPath;
   }
 
   private async rebuildBookOptionsUI(): Promise<void> {
@@ -956,10 +1302,11 @@ class ObbBookView extends ItemView {
     scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Métadonnées" });
     const meta = scroll.createDiv({ cls: "obbwasm-section" });
     const t = this.labeledText(meta, "Titre");
-    this.bindMeta(t, "title");
     const a = this.labeledText(meta, "Auteur");
-    this.bindMeta(a, "author");
     const p = this.labeledText(meta, "Éditeur / édition");
+    this.metaInputs = { title: t, author: a, publisher: p };
+    this.bindMeta(t, "title");
+    this.bindMeta(a, "author");
     this.bindMeta(p, "publisher");
 
     scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Citations (Pandoc)" });
@@ -982,6 +1329,30 @@ class ObbBookView extends ItemView {
       this.plugin.settings.cslVaultPath = cslPathInput.value;
       await this.plugin.saveSettings();
     });
+    citeSec.createEl("p", {
+      cls: "obbwasm-help-text",
+      text: "Notes markdown du coffre : une section # titre par entrée (Wikilinks [[glossaire#…]] / [[index#…]]).",
+    });
+    const glossaryPathInput = this.labeledText(citeSec, "Note glossaire (vault)");
+    glossaryPathInput.placeholder = "ex. Livre/glossaire.md";
+    glossaryPathInput.value = this.plugin.settings.glossaryVaultPath;
+    glossaryPathInput.addEventListener("change", async () => {
+      this.plugin.settings.glossaryVaultPath = glossaryPathInput.value;
+      await this.plugin.saveSettings();
+    });
+    const nameIndexPathInput = this.labeledText(citeSec, "Note index des noms (vault)");
+    nameIndexPathInput.placeholder = "ex. Livre/index.md";
+    nameIndexPathInput.value = this.plugin.settings.nameIndexVaultPath;
+    nameIndexPathInput.addEventListener("change", async () => {
+      this.plugin.settings.nameIndexVaultPath = nameIndexPathInput.value;
+      await this.plugin.saveSettings();
+    });
+    this.citeVaultInputs = {
+      bib: bibPathInput,
+      csl: cslPathInput,
+      glossary: glossaryPathInput,
+      nameIndex: nameIndexPathInput,
+    };
 
     scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Mise en page livre" });
     const layoutSec = scroll.createDiv({ cls: "obbwasm-section" });
@@ -1020,6 +1391,33 @@ class ObbBookView extends ItemView {
 
     this.bookOptsRoot = layoutSec.createDiv({ cls: "obb-book-opts-root" });
     this.sectionOrderRoot = layoutSec.createDiv({ cls: "obb-section-order-root" });
+    const presetsRoot = layoutSec.createDiv({ cls: "obb-presets-root" });
+    mountBookLayoutPresetsPanel(presetsRoot, frLocale, {
+      listStored: () => this.plugin.parseStoredBookPresets(),
+      listFilePresets: () => this.plugin.listBookPresetFiles(),
+      saveCurrentAs: (name, overwriteId) => this.plugin.saveBookLayoutPreset(name, overwriteId),
+      loadStored: (id) => this.plugin.loadBookLayoutPreset(id),
+      deleteStored: (id) => this.plugin.deleteBookLayoutPreset(id),
+      loadFromFile: (rel) => this.plugin.loadBookLayoutPresetFromFile(rel),
+      onPresetLoaded: async (d: PresetLoadDetail) => {
+        if (d.kind === "stored") {
+          const row = this.plugin.parseStoredBookPresets().find((x) => x.id === d.id);
+          const name = row?.name ?? d.id;
+          new Notice(`${frLocale.ui.presetLoadedNoticePrefix} « ${name} ».`);
+        } else {
+          const short = d.relPath.replace(/^typeset\/presets\//, "");
+          new Notice(`${frLocale.ui.presetLoadedFileNoticePrefix} ${short}`);
+        }
+      },
+      onPresetSaved: (name) => {
+        new Notice(`${frLocale.ui.presetSavedNoticePrefix} « ${name} ».`);
+      },
+      onChanged: async () => {
+        await this.plugin.refreshTemplateMeta();
+        await this.rebuildBookOptionsUI();
+        this.syncCompileFieldsFromPluginSettings();
+      },
+    });
     await this.rebuildBookOptionsUI();
 
     scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Intérieur" });
@@ -1143,10 +1541,14 @@ class ObbBookView extends ItemView {
   async runCompile(): Promise<void> {
     this.setStatus("Compilation…");
     try {
+      if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb"))) {
+        throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
+      }
       const { pdf, fileBase } = await this.plugin.compileActiveNoteToPdf();
+      this.clearPdfPreview();
+      const dest = await this.plugin.saveAuxPdf(pdf, "-obb");
       this.showPdfPreview(pdf);
       this.setStatus(`OK — ${fileBase}.pdf (${pdf.byteLength} octets)`);
-      const dest = await this.plugin.saveAuxPdf(pdf, "-obb");
       new Notice(`PDF enregistré : ${dest}`);
       this.innerPagesInput.value = String(this.plugin.settings.innerPages);
       this.updateSpineHint();
@@ -1160,9 +1562,13 @@ class ObbBookView extends ItemView {
   async runCover(): Promise<void> {
     this.setStatus("Couverture…");
     try {
+      if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb-cover"))) {
+        throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
+      }
       const pdf = await this.plugin.compileCoverPdf();
-      this.showPdfPreview(pdf);
+      this.clearPdfPreview();
       const dest = await this.plugin.saveAuxPdf(pdf, "-obb-cover");
+      this.showPdfPreview(pdf);
       this.setStatus(`Couverture — ${dest}`);
       new Notice(`Couverture : ${dest}`);
     } catch (e) {
@@ -1175,9 +1581,13 @@ class ObbBookView extends ItemView {
   async runImposition(): Promise<void> {
     this.setStatus("Imposition…");
     try {
+      if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb-imposition"))) {
+        throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
+      }
       const pdf = await this.plugin.compileImpositionPdf();
-      this.showPdfPreview(pdf);
+      this.clearPdfPreview();
       const dest = await this.plugin.saveAuxPdf(pdf, "-obb-imposition");
+      this.showPdfPreview(pdf);
       this.setStatus(`Imposition — ${dest}`);
       new Notice(`Imposition : ${dest}`);
     } catch (e) {
@@ -1278,36 +1688,6 @@ class ObbWasmSettingTab extends PluginSettingTab {
           this.plugin.settings.debugMedia = v;
           await this.plugin.saveSettings();
         }),
-      );
-
-    new Setting(containerEl)
-      .setName("Note glossaire (vault)")
-      .setDesc(
-        "Pour `[[glossaire#slug]]` : markdown avec une section `# titre` par entrée (liens Wikilink vers la note « glossaire »).",
-      )
-      .addText((t) =>
-        t
-          .setPlaceholder("ex. Livre/glossaire.md")
-          .setValue(this.plugin.settings.glossaryVaultPath)
-          .onChange(async (v) => {
-            this.plugin.settings.glossaryVaultPath = v;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Note index des noms (vault)")
-      .setDesc(
-        "Pour `[[index#slug]]` : même schéma (`# nom` + notice). Wikilink vers la note « index ».",
-      )
-      .addText((t) =>
-        t
-          .setPlaceholder("ex. Livre/index.md")
-          .setValue(this.plugin.settings.nameIndexVaultPath)
-          .onChange(async (v) => {
-            this.plugin.settings.nameIndexVaultPath = v;
-            await this.plugin.saveSettings();
-          }),
       );
 
     new Setting(containerEl)

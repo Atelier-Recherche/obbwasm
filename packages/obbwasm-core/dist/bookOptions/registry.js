@@ -54,15 +54,28 @@ export const BOOK_OPTIONS = [
         id: "line-spacing-preset",
         kind: "enum",
         typstKey: "line-spacing-preset",
-        enumValues: ["standard", "narrow", "wide"],
+        enumValues: ["standard", "narrow", "wide", "custom"],
         labelKey: "lineSpacingPreset",
         enumValueKeys: true,
+    },
+    {
+        id: "line-spacing-em",
+        kind: "number",
+        typstKey: "line-spacing-em",
+        labelKey: "lineSpacingEm",
     },
     {
         id: "body-text-alignment",
         kind: "enum",
         typstKey: "body-text-alignment",
-        enumValues: ["justify", "left", "center"],
+        enumValues: [
+            "left",
+            "right",
+            "center",
+            "justify",
+            "justify-last-left",
+            "justify-last-right",
+        ],
         labelKey: "bodyTextAlignment",
         enumValueKeys: true,
     },
@@ -242,5 +255,12 @@ export const BOOK_OPTION_BY_ID = Object.fromEntries(BOOK_OPTIONS.map((o) => [o.i
 export const PIPELINE_ONLY_BOOK_OPTION_IDS = ["markdown-horizontal-rule"];
 export function mergeVisibleBookOptionIds(templateFilteredIds) {
     return [...new Set([...templateFilteredIds, ...PIPELINE_ONLY_BOOK_OPTION_IDS])];
+}
+/** Ajoute des options dépendantes (ex. interligne numérique si preset custom). */
+export function expandDependentBookOptionIds(ids) {
+    const s = new Set(ids);
+    if (s.has("line-spacing-preset"))
+        s.add("line-spacing-em");
+    return [...s];
 }
 //# sourceMappingURL=registry.js.map

@@ -8,4 +8,6 @@ export declare const BOOK_OPTION_BY_ID: Record<string, BookOptionDef>;
 /** Options affichées même si absentes de `supported-options` du gabarit (hors `conf` Typst). */
 export declare const PIPELINE_ONLY_BOOK_OPTION_IDS: readonly string[];
 export declare function mergeVisibleBookOptionIds(templateFilteredIds: string[]): string[];
+/** Ajoute des options dépendantes (ex. interligne numérique si preset custom). */
+export declare function expandDependentBookOptionIds(ids: string[]): string[];
 //# sourceMappingURL=registry.d.ts.map

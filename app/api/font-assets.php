@@ -7,7 +7,9 @@ if ($_SERVER["REQUEST_METHOD"] !== "GET") {
 }
 
 $root = project_typeset_root();
-$fontsRoot = $root . DIRECTORY_SEPARATOR . "typeset" . DIRECTORY_SEPARATOR . "typst" . DIRECTORY_SEPARATOR . "fonts";
+$fontsFlat = $root . DIRECTORY_SEPARATOR . "typeset" . DIRECTORY_SEPARATOR . "fonts";
+$fontsLegacy = $root . DIRECTORY_SEPARATOR . "typeset" . DIRECTORY_SEPARATOR . "typst" . DIRECTORY_SEPARATOR . "fonts";
+$fontsRoot = is_dir($fontsFlat) ? $fontsFlat : $fontsLegacy;
 $action = (string)($_GET["action"] ?? "list");
 
 if ($action === "list") {
@@ -41,7 +43,18 @@ if ($action === "file") {
     }
 
     $full = realpath($root . DIRECTORY_SEPARATOR . str_replace(["/", "\\"], DIRECTORY_SEPARATOR, $path));
-    if ($full === false || !str_starts_with($full, realpath($fontsRoot) ?: $fontsRoot)) {
+    $flatReal = is_dir($fontsFlat) ? realpath($fontsFlat) : false;
+    $legacyReal = is_dir($fontsLegacy) ? realpath($fontsLegacy) : false;
+    $ok = false;
+    if ($full !== false) {
+        if ($flatReal !== false && str_starts_with($full, $flatReal)) {
+            $ok = true;
+        }
+        if ($legacyReal !== false && str_starts_with($full, $legacyReal)) {
+            $ok = true;
+        }
+    }
+    if ($full === false || !$ok) {
         json_response(["ok" => false, "error" => "Chemin police invalide"], 400);
     }
     if (!is_file($full)) {

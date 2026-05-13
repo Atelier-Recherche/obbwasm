@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { BookOptionDef } from "@obbwasm/core";
-import { BOOK_OPTIONS } from "@obbwasm/core";
-import type { BookLayoutState, DocumentLang } from "@obbwasm/core";
-import { STRING_OVERRIDE_KEYS } from "@obbwasm/core";
 import {
+  BOOK_OPTIONS,
   BOOK_OPTION_SECTION_IDS,
   BOOK_OPTION_SECTION_KEYS,
+  STRING_OVERRIDE_KEYS,
+  countBookOptionsNonDefaultInDefs,
+  countNonEmptyStringOverrides,
+  type BookLayoutState,
+  type DocumentLang,
   type BookOptionSectionKey,
 } from "@obbwasm/core";
 import { useI18n } from "../i18n/context";
@@ -42,8 +45,7 @@ export function BookOptionsForm({ visibleOptionIds, bookLayout, setBookLayout, p
   }
 
   function isExpanded(key: CollapsibleKey): boolean {
-    /* Par défaut ouvert : les sections sont repliables en cliquant sur l’en-tête. */
-    return openSections[key] !== false;
+    return openSections[key] === true;
   }
 
   function setOverride(key: string, value: string) {
@@ -60,6 +62,22 @@ export function BookOptionsForm({ visibleOptionIds, bookLayout, setBookLayout, p
   function renderControl(def: BookOptionDef) {
     const label = t(`options.${def.labelKey}.label`);
     const val = bookLayout.values[def.id];
+
+    if (def.kind === "number") {
+      return (
+        <label key={def.id} className="book-opt-field inline-field">
+          <span className="book-opt-label">{label}</span>
+          <input
+            type="number"
+            step={0.05}
+            min={0.5}
+            max={4}
+            value={typeof val === "string" ? val : "1.2"}
+            onChange={(e) => patchBookValues({ [def.id]: e.target.value })}
+          />
+        </label>
+      );
+    }
 
     if (def.kind === "bool") {
       return (
@@ -108,6 +126,7 @@ export function BookOptionsForm({ visibleOptionIds, bookLayout, setBookLayout, p
   }
 
   const hasVisibleOptions = visibleOptionIds.length > 0;
+  const labelsFilledCount = countNonEmptyStringOverrides(bookLayout.stringOverrides, STRING_OVERRIDE_KEYS);
 
   return (
     <div className="book-options-form">
@@ -129,9 +148,16 @@ export function BookOptionsForm({ visibleOptionIds, bookLayout, setBookLayout, p
         <div className="book-options-sections">
           {BOOK_OPTION_SECTION_KEYS.map((sectionKey) => {
             const ids = BOOK_OPTION_SECTION_IDS[sectionKey];
-            const defs = ids.map((id) => defsById[id]).filter((def): def is BookOptionDef => !!def && allow.has(def.id));
+            const defs = ids
+              .map((id) => defsById[id])
+              .filter((def): def is BookOptionDef => !!def && allow.has(def.id))
+              .filter((def) => {
+                if (def.id !== "line-spacing-em") return true;
+                return bookLayout.values["line-spacing-preset"] === "custom";
+              });
             if (defs.length === 0) return null;
             const expanded = isExpanded(sectionKey);
+            const nonDefault = countBookOptionsNonDefaultInDefs(defs, bookLayout.values);
             return (
               <section key={sectionKey} className={`book-options-section ${expanded ? "is-open" : ""}`}>
                 <button
@@ -142,7 +168,18 @@ export function BookOptionsForm({ visibleOptionIds, bookLayout, setBookLayout, p
                 >
                   <ChevronRight className="book-options-section-chevron" aria-hidden size={18} />
                   <span className="book-options-section-heading">{t(`ui.optionSections.${sectionKey}`)}</span>
-                  <span className="book-options-count-pill">{defs.length}</span>
+                  <span className="book-options-section-count" title={t("ui.bookOptionsNonDefaultHint")}>
+                    <span className="book-options-count-pill">{defs.length}</span>
+                    <span
+                      className={
+                        nonDefault > 0
+                          ? "book-options-count-pill book-options-count-pill--nondefault"
+                          : "book-options-count-pill book-options-count-pill--zero"
+                      }
+                    >
+                      {nonDefault}
+                    </span>
+                  </span>
                 </button>
                 {expanded ? <div className="book-options-section-grid">{defs.map((def) => renderControl(def))}</div> : null}
               </section>
@@ -162,7 +199,18 @@ export function BookOptionsForm({ visibleOptionIds, bookLayout, setBookLayout, p
         >
           <ChevronRight className="book-options-section-chevron" aria-hidden size={18} />
           <span className="book-options-section-heading">{t("ui.customLabels")}</span>
-          <span className="book-options-count-pill">{STRING_OVERRIDE_KEYS.length}</span>
+          <span className="book-options-section-count" title={t("ui.bookOptionsLabelsFilledHint")}>
+            <span className="book-options-count-pill">{STRING_OVERRIDE_KEYS.length}</span>
+            <span
+              className={
+                labelsFilledCount > 0
+                  ? "book-options-count-pill book-options-count-pill--nondefault"
+                  : "book-options-count-pill book-options-count-pill--zero"
+              }
+            >
+              {labelsFilledCount}
+            </span>
+          </span>
         </button>
         {openSections.labels === true ? (
           <>

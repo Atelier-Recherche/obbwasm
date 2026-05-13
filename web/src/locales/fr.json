@@ -67,6 +67,19 @@
     "close": "Fermer",
     "bookOptions": "Options de mise en page",
     "bookOptionsNone": "Ce gabarit n’expose aucune option de mise en page dans l’interface.",
+    "bookLayoutPresets": "Préréglages (compte)",
+    "bookPresetsNeedLogin": "Connectez-vous pour enregistrer des préréglages sur votre compte.",
+    "presetNamePlaceholder": "Nom du préréglage",
+    "presetSave": "Enregistrer le réglage actuel",
+    "presetLoad": "Charger",
+    "presetDelete": "Supprimer",
+    "presetPick": "Choisir…",
+    "presetListEmpty": "(aucun préréglage)",
+    "presetIncludesBookMeta": "Enregistre aussi le titre, l’auteur et l’édition (champs ci-dessus). Les fichiers .bib / .csl restent une sélection locale du navigateur.",
+    "presetLoadedBanner": "Préréglage chargé :",
+    "presetSavedBanner": "Préréglage enregistré :",
+    "bookOptionsNonDefaultHint": "Options dont la valeur n’est pas celle par défaut",
+    "bookOptionsLabelsFilledHint": "Libellés personnalisés renseignés",
     "sectionOrder": "Ordre des sections",
     "sectionOrderHint": "Glisser-déposer pour réordonner (sections activées uniquement).",
     "customLabels": "Libellés du document (optionnel)",
@@ -102,14 +115,23 @@
     "dropCapFirstPara": { "label": "Lettrine au premier paragraphe" },
     "lineSpacingPreset": {
       "label": "Interlignage",
-      "values": { "standard": "Standard", "narrow": "Étroit", "wide": "Large" }
+      "values": {
+        "standard": "Standard",
+        "narrow": "Étroit",
+        "wide": "Large",
+        "custom": "Personnalisé (valeur numérique)"
+      }
     },
+    "lineSpacingEm": { "label": "Interligne (em, si « Personnalisé »)" },
     "bodyTextAlignment": {
       "label": "Alignement du corps de texte",
       "values": {
+        "left": "Aligné à gauche",
+        "right": "Aligné à droite",
+        "center": "Centré",
         "justify": "Justifié",
-        "left": "Aligné à gauche (bords droits irréguliers)",
-        "center": "Centré"
+        "justify-last-left": "Justifié — dernière ligne à gauche",
+        "justify-last-right": "Justifié — dernière ligne à droite"
       }
     },
     "markdownHorizontalRule": {

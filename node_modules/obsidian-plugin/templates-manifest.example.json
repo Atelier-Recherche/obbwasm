@@ -5,7 +5,7 @@
     {
       "id": "garamond-brsnoba5",
       "name": "Garamond brsnoba5",
-      "mainTypPath": "typeset/typst/layout/Garamond-brsnoba5-layout.typ",
+      "mainTypPath": "typeset/layout/Garamond-brsnoba5-layout.typ",
       "variables": {}
     }
   ]

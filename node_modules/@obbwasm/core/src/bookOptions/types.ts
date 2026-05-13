@@ -15,7 +15,7 @@ export type SectionId =
   | "indexGlossary"
   | "backCover";
 
-export type OptionKind = "bool" | "enum" | "string" | "color";
+export type OptionKind = "bool" | "enum" | "string" | "color" | "number";
 
 export type BookOptionDef = {
   id: string;

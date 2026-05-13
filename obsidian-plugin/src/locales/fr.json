@@ -65,6 +65,22 @@
     "close": "Fermer",
     "bookOptions": "Options de mise en page",
     "bookOptionsNone": "Ce gabarit n’expose aucune option de mise en page dans l’interface.",
+    "bookLayoutPresets": "Préréglages de mise en page",
+    "presetNamePlaceholder": "Nom du préréglage",
+    "presetSave": "Enregistrer le réglage actuel",
+    "presetLoad": "Charger",
+    "presetDelete": "Supprimer",
+    "presetFilesHint": "Chaque préréglage inclut la mise en page, le titre, l’auteur, l’édition et les chemins coffre (.bib, .csl, glossaire, index). Les fichiers JSON dans typeset/presets/ du bundle sont listés ci-dessous.",
+    "presetStoredEmpty": "(aucun préréglage enregistré dans l’extension)",
+    "presetSourceExtension": "extension",
+    "presetSourceFile": "fichier",
+    "presetLoadedNoticePrefix": "Préréglage chargé :",
+    "presetLoadedFileNoticePrefix": "Préréglage (fichier) appliqué :",
+    "presetSavedNoticePrefix": "Préréglage enregistré :",
+    "presetOverwriteConfirm": "Un préréglage nommé « {{name}} » existe déjà. Remplacer son contenu par le réglage actuel ?",
+    "savePdfBlockedOpenViewer": "Compilation / enregistrement impossible : fermez l’onglet ou le panneau qui affiche ce PDF dans Obsidian (fichier cible verrouillé), puis réessayez.",
+    "bookOptionsNonDefaultHint": "Nombre d’options dont la valeur n’est pas celle par défaut",
+    "bookOptionsLabelsFilledHint": "Nombre de libellés personnalisés renseignés",
     "sectionOrder": "Ordre des sections",
     "sectionOrderHint": "Glisser-déposer pour réordonner (sections activées uniquement).",
     "customLabels": "Libellés du document (optionnel)",
@@ -100,14 +116,23 @@
     "dropCapFirstPara": { "label": "Lettrine au premier paragraphe" },
     "lineSpacingPreset": {
       "label": "Interlignage",
-      "values": { "standard": "Standard", "narrow": "Étroit", "wide": "Large" }
+      "values": {
+        "standard": "Standard",
+        "narrow": "Étroit",
+        "wide": "Large",
+        "custom": "Personnalisé (valeur numérique)"
+      }
     },
+    "lineSpacingEm": { "label": "Interligne (em, si « Personnalisé »)" },
     "bodyTextAlignment": {
       "label": "Alignement du corps de texte",
       "values": {
+        "left": "Aligné à gauche",
+        "right": "Aligné à droite",
+        "center": "Centré",
         "justify": "Justifié",
-        "left": "Aligné à gauche (bords droits irréguliers)",
-        "center": "Centré"
+        "justify-last-left": "Justifié — dernière ligne à gauche",
+        "justify-last-right": "Justifié — dernière ligne à droite"
       }
     },
     "markdownHorizontalRule": {

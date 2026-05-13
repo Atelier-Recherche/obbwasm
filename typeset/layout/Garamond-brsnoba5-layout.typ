@@ -3,10 +3,10 @@
 // version: v2.0
 // detail: Modèle B5 (143.5mm x 210mm), options ObbWasm (registre partagé + ordre des sections).
 // format: brsnoba5
-// supported-options: chapter-title-in-header, page-number-placement, header-footer-rule, page-number-style, auto-heading-numbering, h1-typography, drop-cap-first-para, line-spacing-preset, body-text-alignment, chapter-start-odd, binding-gutter-mm, transition-blank-style, caption-position, footnote-scope, image-treatment, accent-color, show-index, list-figures-style, show-glossary, cover-page, half-title-page, title-page, front-title-recto-with-blank-before, section-new-page, section-title-recto-with-blank-before, toc-position, toc-depth, bibliography-position, widows-orphans, show-annexes, show-back-cover
+// supported-options: chapter-title-in-header, page-number-placement, header-footer-rule, page-number-style, auto-heading-numbering, h1-typography, drop-cap-first-para, line-spacing-preset, line-spacing-em, body-text-alignment, chapter-start-odd, binding-gutter-mm, transition-blank-style, caption-position, footnote-scope, image-treatment, accent-color, show-index, list-figures-style, show-glossary, cover-page, half-title-page, title-page, front-title-recto-with-blank-before, section-new-page, section-title-recto-with-blank-before, toc-position, toc-depth, bibliography-position, widows-orphans, show-annexes, show-back-cover
 // @obbwasm-meta end
 
-#import "/typeset/typst/shared/book-options-defaults.typ": book-options-defaults
+#import "/typeset/shared/book-options-defaults.typ": book-options-defaults
 
 #let run-section-title = state("garamond-b5-section-mark", none)
 
@@ -41,6 +41,7 @@
 #let _line-leading(conf) = {
   if conf.line-spacing-preset == "narrow" { 1.05em }
   else if conf.line-spacing-preset == "wide" { 1.35em }
+  else if conf.line-spacing-preset == "custom" { conf.line-spacing }
   else { conf.line-spacing }
 }
 
@@ -232,21 +233,37 @@
   )
 
   let body-align = conf.at("body-text-alignment", default: "justify")
+  // Comparaisons explicites (fiables sur toutes les versions WASM) : la justification
+  // contrôle les lignes complètes ; l’alignement courant règle surtout la dernière ligne
+  // (voir doc Typst `par.justify` + alignement courant).
+  let body-justify = (
+    body-align == "justify"
+      or body-align == "justify-last-left"
+      or body-align == "justify-last-right"
+  )
   set text(
     font: conf.font-family,
     size: conf.font-size,
     lang: conf.document-lang,
-    hyphenate: body-align == "justify",
+    hyphenate: if body-justify { auto } else { false },
   )
   if body-align == "center" {
     set align(center)
+  } else if body-align == "right" {
+    set align(end)
+  } else if body-align == "justify-last-right" {
+    set align(end)
+  } else if body-align == "left" {
+    set align(start)
+  } else if (body-align == "justify" or body-align == "justify-last-left") {
+    set align(start)
   } else {
     set align(start)
   }
   // Règle Typst officielle « show-set » : s’applique à chaque élément `par` (corps Pandoc inclus).
   show par: set par(
     leading: _line-leading(conf),
-    justify: body-align == "justify",
+    justify: body-justify,
   )
 
   if conf.auto-break-long-tokens {

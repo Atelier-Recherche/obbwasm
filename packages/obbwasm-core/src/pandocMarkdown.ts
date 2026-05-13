@@ -208,7 +208,10 @@ export async function compileTypstBookToPdf(params: {
   }
   const generatedTypst = contentTypst;
   const mediaFiles = virt.mediaFiles;
-  const normDefaults = await loader.fetchTextFile(BOOK_OPTIONS_DEFAULTS_PATH);
+  let normDefaults = await loader.fetchTextFile(BOOK_OPTIONS_DEFAULTS_PATH);
+  if (!normDefaults?.trim()) {
+    normDefaults = await loader.fetchTextFile("typeset/typst/shared/book-options-defaults.typ");
+  }
   if (!normDefaults?.trim()) {
     throw new Error(
       `Gabarit requis absent du bundle : ${BOOK_OPTIONS_DEFAULTS_PATH}. Extrayez le dossier typeset (fichiers .typ inclus).`,
@@ -254,6 +257,7 @@ export async function compileTypstBookToPdf(params: {
     );
   }
 
+  compiler.addSource("/typeset/shared/book-options-defaults.typ", defaultsSrc);
   compiler.addSource("/typeset/typst/shared/book-options-defaults.typ", defaultsSrc);
   compiler.addSource("/template.typ", templateSrc);
   compiler.addSource("/content.typ", contentSrc);

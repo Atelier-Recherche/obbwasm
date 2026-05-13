@@ -67,6 +67,19 @@
     "close": "Cerrar",
     "bookOptions": "Opciones de maquetación",
     "bookOptionsNone": "Esta plantilla no expone opciones de maquetación en la interfaz.",
+    "bookLayoutPresets": "Ajustes predefinidos (cuenta)",
+    "bookPresetsNeedLogin": "Inicie sesión para guardar ajustes en su cuenta.",
+    "presetNamePlaceholder": "Nombre del ajuste",
+    "presetSave": "Guardar diseño actual",
+    "presetLoad": "Cargar",
+    "presetDelete": "Eliminar",
+    "presetPick": "Elegir…",
+    "presetListEmpty": "(sin ajustes)",
+    "presetIncludesBookMeta": "También guarda título, autor y edición (campos de arriba). Los archivos .bib / .csl siguen siendo una selección local del navegador.",
+    "presetLoadedBanner": "Ajuste cargado:",
+    "presetSavedBanner": "Ajuste guardado:",
+    "bookOptionsNonDefaultHint": "Opciones con valor distinto al predeterminado",
+    "bookOptionsLabelsFilledHint": "Etiquetas personalizadas rellenadas",
     "sectionOrder": "Orden de secciones",
     "sectionOrderHint": "Arrastrar para reordenar (solo secciones activas).",
     "customLabels": "Etiquetas del documento (opcional)",
@@ -102,11 +115,24 @@
     "dropCapFirstPara": { "label": "Letra capital en el primer párrafo" },
     "lineSpacingPreset": {
       "label": "Interlineado",
-      "values": { "standard": "Estándar", "narrow": "Estrecho", "wide": "Amplio" }
+      "values": {
+        "standard": "Estándar",
+        "narrow": "Estrecho",
+        "wide": "Amplio",
+        "custom": "Personalizado (valor numérico)"
+      }
     },
+    "lineSpacingEm": { "label": "Interlineado (em, si personalizado)" },
     "bodyTextAlignment": {
       "label": "Alineación del cuerpo",
-      "values": { "justify": "Justificado", "left": "Alineado a la izquierda", "center": "Centrado" }
+      "values": {
+        "left": "Alineado a la izquierda",
+        "right": "Alineado a la derecha",
+        "center": "Centrado",
+        "justify": "Justificado",
+        "justify-last-left": "Justificado — última línea a la izquierda",
+        "justify-last-right": "Justificado — última línea a la derecha"
+      }
     },
     "markdownHorizontalRule": {
       "label": "Separador Markdown (`---`)",

@@ -67,6 +67,19 @@
     "close": "Close",
     "bookOptions": "Layout options",
     "bookOptionsNone": "This template does not expose any layout options in the UI.",
+    "bookLayoutPresets": "Presets (account)",
+    "bookPresetsNeedLogin": "Sign in to save layout presets to your account.",
+    "presetNamePlaceholder": "Preset name",
+    "presetSave": "Save current layout",
+    "presetLoad": "Load",
+    "presetDelete": "Delete",
+    "presetPick": "Choose…",
+    "presetListEmpty": "(no presets)",
+    "presetIncludesBookMeta": "Also saves title, author, and edition (fields above). .bib / .csl files stay as a local browser selection.",
+    "presetLoadedBanner": "Preset loaded:",
+    "presetSavedBanner": "Preset saved:",
+    "bookOptionsNonDefaultHint": "Options whose value differs from the default",
+    "bookOptionsLabelsFilledHint": "Custom labels filled in",
     "sectionOrder": "Section order",
     "sectionOrderHint": "Drag and drop to reorder (enabled sections only).",
     "customLabels": "Document labels (optional)",
@@ -102,11 +115,24 @@
     "dropCapFirstPara": { "label": "Drop cap on first paragraph" },
     "lineSpacingPreset": {
       "label": "Line spacing",
-      "values": { "standard": "Standard", "narrow": "Tight", "wide": "Loose" }
+      "values": {
+        "standard": "Standard",
+        "narrow": "Tight",
+        "wide": "Loose",
+        "custom": "Custom (numeric)"
+      }
     },
+    "lineSpacingEm": { "label": "Line height (em, when Custom)" },
     "bodyTextAlignment": {
       "label": "Body text alignment",
-      "values": { "justify": "Justified", "left": "Ragged right (flush left)", "center": "Centered" }
+      "values": {
+        "left": "Flush left",
+        "right": "Flush right",
+        "center": "Centered",
+        "justify": "Justified",
+        "justify-last-left": "Justified — last line left",
+        "justify-last-right": "Justified — last line right"
+      }
     },
     "markdownHorizontalRule": {
       "label": "Markdown horizontal rule (`---`)",
