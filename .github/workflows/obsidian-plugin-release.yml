@@ -1,0 +1,50 @@
+# Release plugin Obsidian : déclenchée par un tag semver (ex. 0.1.1).
+# Voir Release-Plugin.ps1 à la racine du dépôt.
+name: Obsidian plugin release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build core + plugin
+        run: npm run build -w @obbwasm/core && npm run build -w obsidian-plugin
+
+      - name: Verify artefacts
+        run: |
+          test -f obsidian-plugin/main.js
+          test -f obsidian-plugin/manifest.json
+          test -f obsidian-plugin/styles.css
+          test -f obsidian-plugin/versions.json
+
+      - name: Create GitHub release (latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          generate_release_notes: false
+          body_path: obsidian-plugin-release-notes.md
+          files: |
+            obsidian-plugin/main.js
+            obsidian-plugin/manifest.json
+            obsidian-plugin/styles.css
+            obsidian-plugin/versions.json
