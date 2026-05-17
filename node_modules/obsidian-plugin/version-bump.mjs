@@ -1,0 +1,24 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const targetVersion = process.env.npm_package_version;
+if (!targetVersion || !/^\d+\.\d+\.\d+$/.test(targetVersion)) {
+  console.error("npm_package_version manquant ou invalide (attendu: x.y.z).");
+  process.exit(1);
+}
+
+const manifestPath = path.join(__dirname, "manifest.json");
+const versionsPath = path.join(__dirname, "versions.json");
+
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const { minAppVersion } = manifest;
+manifest.version = targetVersion;
+writeFileSync(manifestPath, `${JSON.stringify(manifest, null, "\t")}\n`);
+
+const versions = JSON.parse(readFileSync(versionsPath, "utf8"));
+versions[targetVersion] = minAppVersion;
+writeFileSync(versionsPath, `${JSON.stringify(versions, null, "\t")}\n`);
+
+console.log(`manifest.json → ${targetVersion}, versions.json["${targetVersion}"] → ${minAppVersion}`);
