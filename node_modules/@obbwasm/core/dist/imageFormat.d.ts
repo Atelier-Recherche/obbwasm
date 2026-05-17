@@ -16,4 +16,17 @@ export declare function normalizeImageBytesForTypst(bytes: Uint8Array, pathHint:
     usedPlaceholder: boolean;
     resolvedExt: string;
 };
+/**
+ * Décode WebP / AVIF via le moteur image du navigateur (Electron / Chromium) → PNG pour Typst WASM.
+ */
+export declare function rasterBytesToPng(bytes: Uint8Array, mime: string): Promise<Uint8Array | null>;
+/**
+ * Normalise les octets image pour Typst : placeholder si invalide, WebP/AVIF → PNG si possible.
+ */
+export declare function normalizeImageBytesForTypstAsync(bytes: Uint8Array, pathHint: string): Promise<{
+    bytes: Uint8Array;
+    usedPlaceholder: boolean;
+    resolvedExt: string;
+    convertedFrom?: string;
+}>;
 //# sourceMappingURL=imageFormat.d.ts.map

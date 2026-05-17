@@ -50,6 +50,7 @@ import {
   reorderSpreadSequence,
   spineThicknessMm,
   PAPER_THICKNESS_MM,
+  resolveRemoteImageFetchUrl,
 } from "@obbwasm/core";
 import { ProgressOverlay } from "./ProgressOverlay";
 import { PdfPageViewer } from "./PdfPageViewer";
@@ -595,7 +596,8 @@ export default function App() {
         mediaFiles: pandocMediaFiles,
         fetchRemoteBytes: async (url: string) => {
           try {
-            const r = await fetch(url, { mode: "cors" });
+            const fetchUrl = resolveRemoteImageFetchUrl(url);
+            const r = await fetch(fetchUrl, { mode: "cors" });
             if (!r.ok) return null;
             return new Uint8Array(await r.arrayBuffer());
           } catch {

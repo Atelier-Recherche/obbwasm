@@ -1,13 +1,52 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Release du plugin Obsidian (obsidian-plugin/) : bump semver, sync manifest/versions.json, build, commit, tag, push.
+  Release plugin Obsidian : bump semver, build, commit, tag, push → GitHub Actions publie la release « latest ».
 
 .DESCRIPTION
-  - Lit la version dans obsidian-plugin/package.json
-  - Met à jour manifest.json et versions.json (version-bump.mjs)
-  - Build @obbwasm/core + obsidian-plugin (npm workspaces)
-  - Commit, tag semver (ex. 0.1.1), push → GitHub Actions crée la release « latest » avec les artefacts
+  Copiez ce script + version-bump.mjs + .github/workflows/obsidian-plugin-release.yml dans chaque dépôt plugin.
+  Adaptez la section CONFIGURATION ci-dessous et les chemins du workflow YAML.
+
+  Prérequis côté dépôt
+  --------------------
+  - manifest.json, versions.json, styles.css, version-bump.mjs (dans le dossier plugin)
+  - package.json du plugin avec champ "version" (source de vérité pour le bump)
+  - Workflow GitHub sur push de tags semver : 1.2.3 (sans préfixe "v", convention Obsidian)
+  - Repo GitHub : Settings → Actions → Workflow permissions → Read and write
+
+  Pièges fréquents (à lire avant de copier dans un autre projet)
+  --------------------------------------------------------------
+  1) CI Linux / npm ci EBADPLATFORM
+     Ne JAMAIS ajouter en dépendance DIRECTE (devDependencies) des paquets limités à une OS, ex. :
+       @rolldown/binding-win32-x64-msvc, lightningcss-win32-x64-msvc
+     Ils cassent "npm ci" sur ubuntu-latest même si vous ne build que le plugin.
+     Vite/Rolldown installent les binaires natifs en optionalDependencies : laisser npm choisir.
+     En monorepo : dans le workflow CI, limiter l'install :
+       npm ci --include-workspace-root -w <workspace-core> -w <workspace-plugin>
+     (ne pas installer tout le monorepo si un autre workspace force des binaires Windows).
+
+  2) Tag vs version manifest
+     Le tag Git DOIT être identique à manifest.json.version (ex. 1.0.3, pas v1.0.3).
+     version-bump.mjs aligne manifest + versions.json avant le commit.
+
+  3) Fichier de notes de release
+     obsidian-plugin-release-notes.md (ou nom configuré) doit être COMMITÉ dans le même commit
+     que le tag : le workflow utilise body_path sur ce fichier.
+
+  4) Arbre Git propre
+     Le script refuse de tourner si git status n'est pas clean.
+
+  5) GitHub Actions / Node
+     Utiliser actions/checkout@v5, actions/setup-node@v5, node-version "24",
+     env FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true (dépréciation Node 20 sur les runners).
+
+  6) Plugin seul à la racine (pas monorepo)
+     Mettre $PluginSubdir = '.' ; $CoreWorkspace = $null ;
+     build via npm run build dans $PluginSubdir au lieu de -w.
+
+  7) main.js
+     Soit commité (comme ici), soit produit uniquement en CI — dans ce cas ne pas l'ajouter
+     à git add local, mais le workflow doit toujours le builder avant softprops/action-gh-release.
 
 .PARAMETER BumpKind
   Patch (défaut), Minor ou Major.
@@ -20,6 +59,11 @@
 
 .PARAMETER Remote
   Remote Git (défaut : origin).
+
+.EXAMPLE
+  .\Release-Plugin.ps1
+  .\Release-Plugin.ps1 -BumpKind Minor
+  .\Release-Plugin.ps1 -NoPush
 #>
 param(
     [ValidateSet('Patch', 'Minor', 'Major')]
@@ -34,6 +78,18 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# =============================================================================
+# CONFIGURATION — adapter lors de la copie vers un autre dépôt
+# =============================================================================
+$PluginSubdir = 'obsidian-plugin'                    # '.' si le plugin est à la racine
+$CoreWorkspace = '@obbwasm/core'                     # $null si aucun package partagé à compiler avant le plugin
+$PluginWorkspace = 'obsidian-plugin'                 # nom du workspace npm (package.json → "name") ; $null = npm run build dans $PluginSubdir
+$ReleaseNotesFile = 'obsidian-plugin-release-notes.md' # doit correspondre à body_path dans le workflow YAML
+$ReleaseNotesTitle = 'OBB WASM Book'                 # titre H1 dans le fichier de notes
+$GhActionsUrl = 'https://github.com/Morglaf/obbwasm/actions' # lien affiché en fin de script ; $null pour ne rien afficher
+# Chemins Git relatifs à la racine du dépôt (préfixe = $PluginSubdir sauf si '.' → pas de préfixe)
+# =============================================================================
 
 function Test-CommandExists {
     param([Parameter(Mandatory)][string] $Name)
@@ -67,8 +123,20 @@ function Get-NextSemVer {
     }
 }
 
+function Get-PluginRepoRelativePath {
+    param([Parameter(Mandatory)][string] $FileName)
+    if ($PluginSubdir -eq '.' -or [string]::IsNullOrWhiteSpace($PluginSubdir)) {
+        return $FileName
+    }
+    return "$($PluginSubdir.TrimEnd('/\'))/$FileName"
+}
+
 $repoRoot = $PSScriptRoot
-$pluginDir = Join-Path $repoRoot 'obsidian-plugin'
+$pluginDir = if ($PluginSubdir -eq '.' -or [string]::IsNullOrWhiteSpace($PluginSubdir)) {
+    $repoRoot
+} else {
+    Join-Path $repoRoot $PluginSubdir
+}
 Set-Location -LiteralPath $repoRoot
 
 foreach ($cmd in @('git', 'node', 'npm')) {
@@ -100,7 +168,7 @@ $packageRaw = Get-Content -LiteralPath $packagePath -Raw -Encoding UTF8
 $packageJson = $packageRaw | ConvertFrom-Json
 $currentVersion = [string] $packageJson.version
 if ([string]::IsNullOrWhiteSpace($currentVersion)) {
-    throw "obsidian-plugin/package.json : champ version vide ou absent."
+    throw "$(Get-PluginRepoRelativePath 'package.json') : champ version vide ou absent."
 }
 
 $newVersion = Get-NextSemVer -Version $currentVersion -Kind $BumpKind
@@ -114,7 +182,7 @@ $updatedPackage = [regex]::Replace(
     1
 )
 if ($updatedPackage -eq $packageRaw) {
-    throw "Impossible de mettre à jour la version dans obsidian-plugin/package.json."
+    throw "Impossible de mettre à jour la version dans $(Get-PluginRepoRelativePath 'package.json')."
 }
 Set-Utf8NoBomFile -Path $packagePath -Content $updatedPackage
 
@@ -129,7 +197,7 @@ finally {
     Remove-Item Env:\npm_package_version -ErrorAction SilentlyContinue
 }
 
-$notesPath = Join-Path $repoRoot 'obsidian-plugin-release-notes.md'
+$notesPath = Join-Path $repoRoot $ReleaseNotesFile
 $lastTag = $null
 $describeResult = & git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' 2>&1
 if ($LASTEXITCODE -eq 0) {
@@ -144,21 +212,37 @@ else {
 if ($LASTEXITCODE -ne 0) {
     throw "git log a échoué (code $LASTEXITCODE)."
 }
-$header = "# OBB WASM Book $newVersion`n`n"
+$header = "# $ReleaseNotesTitle $newVersion`n`n"
 $notesBody = $header + ($logLines | Out-String).Trim() + "`n"
 Set-Utf8NoBomFile -Path $notesPath -Content $notesBody
 
 if (-not $SkipBuild) {
-    Write-Host "Build @obbwasm/core + obsidian-plugin..." -ForegroundColor Cyan
-    & npm run build -w @obbwasm/core
-    if ($LASTEXITCODE -ne 0) { throw "npm run build -w @obbwasm/core a échoué (code $LASTEXITCODE)." }
-    & npm run build -w obsidian-plugin
-    if ($LASTEXITCODE -ne 0) { throw "npm run build -w obsidian-plugin a échoué (code $LASTEXITCODE)." }
+    if ($CoreWorkspace) {
+        Write-Host "Build $CoreWorkspace..." -ForegroundColor Cyan
+        & npm run build -w $CoreWorkspace
+        if ($LASTEXITCODE -ne 0) { throw "npm run build -w $CoreWorkspace a échoué (code $LASTEXITCODE)." }
+    }
+    if ($PluginWorkspace) {
+        Write-Host "Build $PluginWorkspace..." -ForegroundColor Cyan
+        & npm run build -w $PluginWorkspace
+        if ($LASTEXITCODE -ne 0) { throw "npm run build -w $PluginWorkspace a échoué (code $LASTEXITCODE)." }
+    }
+    else {
+        Write-Host "Build plugin (npm run build dans $pluginDir)..." -ForegroundColor Cyan
+        Push-Location -LiteralPath $pluginDir
+        try {
+            & npm run build
+            if ($LASTEXITCODE -ne 0) { throw "npm run build a échoué (code $LASTEXITCODE)." }
+        }
+        finally {
+            Pop-Location
+        }
+    }
 }
 
 $mainJs = Join-Path $pluginDir 'main.js'
 if (-not (Test-Path -LiteralPath $mainJs)) {
-    throw "obsidian-plugin/main.js absent après build. Relancez sans -SkipBuild."
+    throw "$(Get-PluginRepoRelativePath 'main.js') absent après build. Relancez sans -SkipBuild."
 }
 
 & git rev-parse --verify --quiet "refs/tags/$newVersion" 2>$null | Out-Null
@@ -167,12 +251,13 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 $pathsToAdd = @(
-    'obsidian-plugin/package.json',
-    'obsidian-plugin/manifest.json',
-    'obsidian-plugin/versions.json',
-    'obsidian-plugin/main.js',
-    'obsidian-plugin/styles.css',
-    'obsidian-plugin-release-notes.md'
+    (Get-PluginRepoRelativePath 'package.json'),
+    (Get-PluginRepoRelativePath 'manifest.json'),
+    (Get-PluginRepoRelativePath 'versions.json'),
+    (Get-PluginRepoRelativePath 'main.js'),
+    (Get-PluginRepoRelativePath 'styles.css'),
+    (Get-PluginRepoRelativePath 'pdf.worker.min.mjs'),
+    $ReleaseNotesFile
 )
 & git add -- $pathsToAdd
 if ($LASTEXITCODE -ne 0) { throw "git add a échoué (code $LASTEXITCODE)." }
@@ -198,5 +283,7 @@ if ($LASTEXITCODE -ne 0) { throw "git push tag a échoué (code $LASTEXITCODE)."
 
 Write-Host ""
 Write-Host "Release plugin $newVersion poussée sur $Remote." -ForegroundColor Green
-Write-Host "GitHub Actions « Obsidian plugin release » va publier la release (latest) avec main.js, manifest.json, styles.css, versions.json." -ForegroundColor Cyan
-Write-Host "Suivi : https://github.com/Morglaf/obbwasm/actions" -ForegroundColor Gray
+Write-Host "GitHub Actions va publier la release (latest) avec main.js, manifest.json, styles.css, versions.json." -ForegroundColor Cyan
+if ($GhActionsUrl) {
+    Write-Host "Suivi : $GhActionsUrl" -ForegroundColor Gray
+}

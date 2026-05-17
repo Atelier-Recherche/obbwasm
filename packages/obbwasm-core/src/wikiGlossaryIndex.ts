@@ -1,3 +1,6 @@
+import { injectTypstHeadingLabels, patchPandocTypstBrokenLabelRefs } from "./pandocTypstLabels.js";
+import { patchPandocTypstMedia } from "./pandocTypstMedia.js";
+
 /** Aligné sur `pandocMarkdown.PandocConvertFn` (évite import circulaire). */
 type PandocConvertFn = (
   options: Record<string, unknown>,
@@ -129,7 +132,9 @@ async function pandocBodyToTypstFragment(
     {},
   );
   let out = patchHr(result.stdout || "", markdownHorizontalRule);
-  out = patchPandocTypstObbWikiRefs(out);
+  out = patchPandocTypstObbWikiRefs(patchPandocTypstMedia(out));
+  out = injectTypstHeadingLabels(out);
+  out = patchPandocTypstBrokenLabelRefs(out);
   return out.trim();
 }
 

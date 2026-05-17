@@ -5,7 +5,17 @@ import { BOOK_OPTIONS_DEFAULTS_PATH, type ObbWasmAssetLoader } from "./assetLoad
 import { mountTypstPackagesFromLoader } from "./typstPackages.js";
 import { virtualizeTypstMediaPaths } from "./typstVirtualMedia.js";
 import { splitPandocTypstBodyAndBibliography } from "./pandocTypstBibliography.js";
+import { withAsyncTimeout, yieldToMainThread } from "./asyncYield.js";
+import { extractMarkdownDataUriImages } from "./markdownDataUriImages.js";
 import { sanitizeTypstCompilerSource } from "./typstHelpers.js";
+import {
+  collectTypstLabelIds,
+  injectTypstHeadingLabels,
+  patchPandocTypstBrokenLabelRefs,
+  patchPandocTypstBrokenLabelRefsAsync,
+  stripNonBookWikiLinks,
+} from "./pandocTypstLabels.js";
+import { patchPandocTypstMedia, stripBrokenMarkdownMedia } from "./pandocTypstMedia.js";
 import {
   buildObbBackMatterTypstFragment,
   normalizeWikiGlossaryIndexLinks,
@@ -105,9 +115,15 @@ export async function pandocMarkdownToTypst(params: {
         ? "plain"
         : sourceFormat;
   let sourceTextForConvert = sourceText;
+  let dataUriFiles: Record<string, Uint8Array> = {};
   if (from === "markdown" && typeof sourceTextForConvert === "string" && sourceTextForConvert.length > 0) {
+    const dataUri = extractMarkdownDataUriImages(sourceTextForConvert);
+    dataUriFiles = dataUri.files;
+    sourceTextForConvert = dataUri.markdown;
     sourceTextForConvert = normalizeWikiImagesForPandoc(sourceTextForConvert);
     sourceTextForConvert = normalizeWikiGlossaryIndexLinks(sourceTextForConvert);
+    sourceTextForConvert = stripNonBookWikiLinks(sourceTextForConvert);
+    sourceTextForConvert = stripBrokenMarkdownMedia(sourceTextForConvert);
     if (bibliography) {
       sourceTextForConvert = normalizePandocCitationPageShorthand(sourceTextForConvert);
     }
@@ -124,6 +140,9 @@ export async function pandocMarkdownToTypst(params: {
   const files: Record<string, string | Blob> = {};
   if (extraFiles) {
     for (const [k, v] of Object.entries(extraFiles)) files[k] = v;
+  }
+  for (const [k, bytes] of Object.entries(dataUriFiles)) {
+    files[k] = new Blob([Uint8Array.from(bytes)]);
   }
   let stdin: string | null = sourceTextForConvert;
   if (!stdin && sourceBlob) {
@@ -143,9 +162,11 @@ export async function pandocMarkdownToTypst(params: {
     }
   }
   const result = await convert(options, stdin, files);
-  const out = patchPandocTypstObbWikiRefs(
-    patchPandocTypstFragments(result.stdout || "", markdownHorizontalRule),
+  let out = patchPandocTypstObbWikiRefs(
+    patchPandocTypstMedia(patchPandocTypstFragments(result.stdout || "", markdownHorizontalRule)),
   );
+  out = injectTypstHeadingLabels(out);
+  out = patchPandocTypstBrokenLabelRefs(out);
   const mediaFiles: Record<string, Uint8Array> = {};
   for (const [k, v] of Object.entries(result.mediaFiles ?? {})) {
     mediaFiles[k] = await toUint8Array(v);
@@ -156,6 +177,9 @@ export async function pandocMarkdownToTypst(params: {
         mediaFiles[k] = await toUint8Array(v);
       }
     }
+  }
+  for (const [k, bytes] of Object.entries(dataUriFiles)) {
+    if (!mediaFiles[k]) mediaFiles[k] = bytes;
   }
   if (!out.trim() && sourceTextForConvert.trim()) {
     return {
@@ -180,6 +204,10 @@ export async function compileTypstBookToPdf(params: {
   fetchRemoteBytes?: (url: string) => Promise<Uint8Array | null>;
   /** Diagnostic virtualisation chemins (rempli si tableau fourni). */
   mediaDebugLog?: string[];
+  /** Rapport d’étape (Pandoc, médias, Typst…) pour l’UI. */
+  onCompilePhase?: (phase: string) => void;
+  /** Délai max compilation Typst WASM (ms). 0 = illimité. */
+  typstCompileTimeoutMs?: number;
   /** Pandoc WASM — requis pour générer glossaire / index depuis du Markdown. */
   pandocConvert?: PandocConvertFn;
   /** Contenu de la note « glossaire » (`# entrée` + définition). */
@@ -188,12 +216,15 @@ export async function compileTypstBookToPdf(params: {
   nameIndexMarkdown?: string | null;
 }): Promise<{ pdf: Uint8Array | null; diagnostics: unknown; stderrLog: string }> {
   const { compiler, loader, templateMainSource, bookLayout, meta, fetchRemoteBytes } = params;
+  const phase = (msg: string) => params.onCompilePhase?.(msg);
   const virt = await virtualizeTypstMediaPaths({
     typst: params.generatedTypst,
     mediaFiles: { ...(params.mediaFiles ?? {}) },
     fetchBytes: fetchRemoteBytes,
     debugLog: params.mediaDebugLog,
   });
+  await yieldToMainThread();
+  phase("Préparation des médias…");
   const bibPos = String(params.bookLayout.values["bibliography-position"] ?? "none");
   const split = splitPandocTypstBodyAndBibliography(virt.typst);
   let contentTypst = virt.typst;
@@ -206,7 +237,6 @@ export async function compileTypstBookToPdf(params: {
       bibliographyTypst = split.bibliography;
     }
   }
-  const generatedTypst = contentTypst;
   const mediaFiles = virt.mediaFiles;
   let normDefaults = await loader.fetchTextFile(BOOK_OPTIONS_DEFAULTS_PATH);
   if (!normDefaults?.trim()) {
@@ -226,18 +256,16 @@ export async function compileTypstBookToPdf(params: {
     const norm = rel.replace(/\\/g, "/").replace(/^\/+/, "");
     if (!norm) continue;
     compiler.mapShadow(`/${norm}`, bytes);
-    compiler.mapShadow(norm, bytes);
   }
 
   const defaultsSrc = sanitizeTypstCompilerSource(String(normDefaults));
   const templateSrc = sanitizeTypstCompilerSource(templateMainSource);
-  const contentSrc = sanitizeTypstCompilerSource(generatedTypst);
-  const bibSrc = sanitizeTypstCompilerSource(bibliographyTypst);
 
   const hrMode = markdownHorizontalRuleFromBookValues(bookLayout.values);
   let glossaryTypst = "// Glossaire ObbWasm : vide.\n";
   let nameIndexTypst = "// Index des noms ObbWasm : vide.\n";
   if (params.pandocConvert) {
+    phase("Glossaire / index…");
     const conv = params.pandocConvert;
     glossaryTypst = sanitizeTypstCompilerSource(
       await buildObbBackMatterTypstFragment({
@@ -256,6 +284,18 @@ export async function compileTypstBookToPdf(params: {
       }),
     );
   }
+  await yieldToMainThread();
+  phase("Liens internes…");
+
+  const labelIds = collectTypstLabelIds(contentTypst, glossaryTypst, nameIndexTypst, bibliographyTypst);
+  contentTypst = await patchPandocTypstBrokenLabelRefsAsync(contentTypst, labelIds);
+  glossaryTypst = await patchPandocTypstBrokenLabelRefsAsync(glossaryTypst, labelIds);
+  nameIndexTypst = await patchPandocTypstBrokenLabelRefsAsync(nameIndexTypst, labelIds);
+  bibliographyTypst = await patchPandocTypstBrokenLabelRefsAsync(bibliographyTypst, labelIds);
+  await yieldToMainThread();
+
+  const contentSrc = sanitizeTypstCompilerSource(contentTypst);
+  const bibSrc = sanitizeTypstCompilerSource(bibliographyTypst);
 
   compiler.addSource("/typeset/shared/book-options-defaults.typ", defaultsSrc);
   compiler.addSource("/typeset/typst/shared/book-options-defaults.typ", defaultsSrc);
@@ -273,17 +313,33 @@ export async function compileTypstBookToPdf(params: {
     ),
   );
 
-  const compiled = await compiler.runWithWorld(
-    {
-      root: "/",
-      mainFilePath: "/main.typ",
-      inputs: {
-        title: meta.title,
-        author: meta.author,
+  await yieldToMainThread();
+  phase("Typst (PDF)…");
+  const typstTimeout = params.typstCompileTimeoutMs ?? 0;
+  let compiled: { result?: Uint8Array; diagnostics?: unknown } | null | undefined;
+  try {
+    const runPdf = compiler.runWithWorld(
+      {
+        root: "/",
+        mainFilePath: "/main.typ",
+        inputs: {
+          title: meta.title,
+          author: meta.author,
+        },
       },
-    },
-    async (world) => world.pdf({ diagnostics: "unix" }),
-  );
+      async (world) => world.pdf({ diagnostics: "unix" }),
+    );
+    compiled = (await (typstTimeout > 0
+      ? withAsyncTimeout(runPdf, typstTimeout, "Compilation Typst")
+      : runPdf)) as { result?: Uint8Array; diagnostics?: unknown };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      pdf: null,
+      diagnostics: [{ message: msg }],
+      stderrLog: msg,
+    };
+  }
 
   if (!compiled?.result) {
     return { pdf: null, diagnostics: compiled?.diagnostics ?? [], stderrLog: "" };

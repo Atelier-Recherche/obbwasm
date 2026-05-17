@@ -90,3 +90,104 @@ export function normalizeImageBytesForTypst(
   const resolvedExt = magic ?? (knownPath || ".png");
   return { bytes, usedPlaceholder: false, resolvedExt };
 }
+
+const TYPST_CONVERT_TO_PNG = new Set([".webp", ".avif"]);
+
+function mimeForImageExt(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case ".webp":
+      return "image/webp";
+    case ".avif":
+      return "image/avif";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    default:
+      return "image/png";
+  }
+}
+
+/**
+ * Décode WebP / AVIF via le moteur image du navigateur (Electron / Chromium) → PNG pour Typst WASM.
+ */
+export async function rasterBytesToPng(bytes: Uint8Array, mime: string): Promise<Uint8Array | null> {
+  if (!bytes?.length) return null;
+  const g = globalThis as {
+    createImageBitmap?: (source: Blob) => Promise<ImageBitmap>;
+    OffscreenCanvas?: new (w: number, h: number) => OffscreenCanvas;
+    document?: { createElement: (tag: string) => HTMLCanvasElement };
+  };
+  if (typeof g.createImageBitmap !== "function") return null;
+
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const blob = new Blob([copy], { type: mime });
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await g.createImageBitmap(blob);
+  } catch {
+    return null;
+  }
+
+  try {
+    const w = bitmap.width;
+    const h = bitmap.height;
+    if (w < 1 || h < 1) return null;
+
+    let pngBlob: Blob | null = null;
+    if (typeof g.OffscreenCanvas === "function") {
+      const canvas = new g.OffscreenCanvas(w, h);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(bitmap, 0, 0);
+      pngBlob = await canvas.convertToBlob({ type: "image/png" });
+    } else if (g.document) {
+      const canvas = g.document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(bitmap, 0, 0);
+      pngBlob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/png");
+      });
+    }
+    if (!pngBlob?.size) return null;
+    return new Uint8Array(await pngBlob.arrayBuffer());
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
+ * Normalise les octets image pour Typst : placeholder si invalide, WebP/AVIF → PNG si possible.
+ */
+export async function normalizeImageBytesForTypstAsync(
+  bytes: Uint8Array,
+  pathHint: string,
+): Promise<{ bytes: Uint8Array; usedPlaceholder: boolean; resolvedExt: string; convertedFrom?: string }> {
+  const base = normalizeImageBytesForTypst(bytes, pathHint);
+  if (base.usedPlaceholder) return base;
+
+  const ext = base.resolvedExt.toLowerCase();
+  if (!TYPST_CONVERT_TO_PNG.has(ext)) return base;
+
+  const png = await rasterBytesToPng(base.bytes, mimeForImageExt(ext));
+  if (png?.length) {
+    return {
+      bytes: png,
+      usedPlaceholder: false,
+      resolvedExt: ".png",
+      convertedFrom: ext,
+    };
+  }
+
+  return {
+    bytes: OBB_PLACEHOLDER_PNG,
+    usedPlaceholder: true,
+    resolvedExt: ".png",
+  };
+}

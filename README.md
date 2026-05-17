@@ -1,142 +1,178 @@
-# OBBWASM
+<div align="center">
 
-Studio de composition et preparation impression, avec pipeline **100% WASM** dans le navigateur:
+<table>
+<tr>
+<td><img src="readme-media/BookBrew.png" alt="BookBrew" width="140" /></td>
+<td align="left">
+<h1 style="margin:0">BookBrew</h1>
+<p style="margin:0.25em 0 0"><strong>Studio de composition livre</strong><br/>Markdown → PDF · Pandoc WASM · Typst WASM · plugin Obsidian</p>
+</td>
+</tr>
+</table>
 
-- Conversion documentaire via **Pandoc WASM**
-- Composition typographique via **Typst WASM**
-- Preview PDF via **pdf.js**
-- API utilitaire minimale en **PHP + JSON**
+<a href="https://atelier.atechnologie.fr/" title="l'Atelier – Association de fabrication de livres et d'outils de recherche"><img src="readme-media/logoasso.jpg" alt="l'Atelier" width="200" /></a>  
+<sub>Développé par <a href="https://atelier.atechnologie.fr/">l'Atelier</a> — fabrication de livres et outils de recherche (EHESS)</sub>
 
-## Stack
+<p>
+🇫🇷 <a href="README.md"><b>Français</b></a> ·
+🇬🇧 <a href="README.en.md">English</a> ·
+🇩🇪 <a href="README.de.md">Deutsch</a> ·
+🇪🇸 <a href="README.es.md">Español</a>
+</p>
 
-- Frontend: React + TypeScript + Vite
-- WASM:
-  - `pandoc-wasm` (conversion vers Typst)
-  - `@myriaddreamin/typst.ts` (compilation Typst vers PDF)
-- Preview: `pdfjs-dist`
-- Backend utilitaire: PHP 8+
-- Stockage: JSON fichiers (`app/data`)
+<p>
+<a href="https://atelier.atechnologie.fr/"><img src="https://img.shields.io/badge/🌐_l'Atelier-atelier.atechnologie.fr-2d5016?style=for-the-badge" alt="Site l'Atelier" /></a>
+<a href="https://github.com/Morglaf/obbwasm"><img src="https://img.shields.io/badge/📦_Dépôt-GitHub-181717?style=for-the-badge&logo=github" alt="Dépôt GitHub" /></a>
+<a href="https://obsidian.md/plugins?search=BRAT#"><img src="https://img.shields.io/badge/⬇️_Plugin_Obsidian-BRAT-7c3aed?style=for-the-badge&logo=obsidian&logoColor=white" alt="Installer le plugin via BRAT" /></a>
+</p>
 
-## Structure du projet
+</div>
 
-```text
-obbwasm/
-  app/
-    api/
-      common.php
-      health.php
-      templates.php
-      projects.php
-      upload.php
-      convert.php
-      imposition-calc.php
-      render-typst.php
-    data/
-      templates/
-      projects/
-      assets/
-    public/
-      index.html
-  typeset/
-    old latex/
-    typst/
-      layout/
-      impose/
-      cover/
-  web/
-    src/
-      App.tsx
-      main.tsx
-      style.css
-      types.d.ts
-    vite.config.ts
-    package.json
-```
+---
 
-## Prerequis
+## 📸 Aperçu
 
-- Node.js 20+ (23 teste)
-- npm 10+
-- PHP 8.2+
+| Options de mise en page | Aperçu PDF |
+| :---: | :---: |
+| <img src="readme-media/screen1.jpg" alt="Panneau options livre dans Obsidian" width="400" /> | <img src="readme-media/screen2.jpg" alt="Aperçu PDF dans Obsidian" width="400" /> |
 
-## Execution en local
+<p align="center">
+<img src="readme-media/screenweb.png" alt="Application web BookBrew" width="820" /><br/>
+<sub>Application web (React + Vite) — même pipeline WASM</sub>
+</p>
 
-### 1) API PHP
+---
 
-Depuis la racine:
+## 📖 À propos
 
-```bash
-php -S 127.0.0.1:8088 -t app
-```
+**BookBrew** (dépôt `obbwasm`) est un studio de composition et de préparation à l’impression, avec un pipeline **100 % WebAssembly** dans le navigateur (et dans Obsidian) :
 
-API disponible sur `http://127.0.0.1:8088/api`.
+- 📝 Conversion documentaire via **Pandoc WASM**
+- 📐 Composition typographique via **Typst WASM**
+- 👁️ Aperçu PDF via **pdf.js**
+- 🌐 Application web **React + Vite** et **plugin Obsidian** partageant le cœur `@obbwasm/core`
+- 🗄️ API utilitaire optionnelle en **PHP + JSON** (projets, gabarits, préréglages)
 
-### 2) Frontend React
+Aucune installation locale de Pandoc ou Typst n’est requise pour le flux principal.
 
-Dans `web/`:
+---
+
+## ⬇️ Plugin Obsidian (BRAT)
+
+1. 🔌 Installer **BRAT** : [Obsidian — BRAT](https://obsidian.md/plugins?search=BRAT#)
+2. ➕ Ajouter ce dépôt avec l’option *« Add Beta plugin »* :  
+   `https://github.com/Morglaf/obbwasm`  
+   (dossier plugin : `obsidian-plugin/` — voir le workflow de release pour les assets `main.js`, `manifest.json`, `styles.css`, WASM)
+
+3. 📥 Télécharger les **gabarits Typst** depuis les réglages du plugin (ou pointer vers un dossier `typeset/` local).
+
+> 💡 Compilation d’une note Markdown active → PDF intérieur, couverture, imposition ; préréglages de mise en page ; glossaire et index des noms.
+
+---
+
+## ⚙️ Fonctionnement
+
+| Composant | Rôle |
+| --- | --- |
+| **Pandoc WASM** | Markdown (+ bibliographie `.bib` / CSL) → Typst |
+| **Typst WASM** | Gabarits `typeset/` (Garamond, imposition, couverture) → PDF |
+| **Médias** | Images locales, URLs distantes (WebP → PNG), images base64 extraites |
+| **Plugin** | Coffre Obsidian, préréglages JSON, aperçu PDF redimensionnable |
+
+📱 Le plugin cible **Obsidian bureau** (Windows, macOS, Linux) ; l’app web tourne dans tout navigateur récent.
+
+---
+
+## 💻 Développement local
+
+**Prérequis** : [Node.js](https://nodejs.org/) 20+, npm 10+, [PHP](https://www.php.net/) 8.2+ (API optionnelle).
 
 ```bash
 npm install
-npm run dev
 ```
 
-Frontend disponible sur `http://localhost:5173`.
-
-Par defaut, le frontend appelle l'API sur `http://127.0.0.1:8088/api`.
-
-Pour changer l'URL API:
+### Application web
 
 ```bash
-# PowerShell
-$env:VITE_API_BASE="https://mon-domaine/api"
-npm run dev
+npm run dev -w web
 ```
 
-## Build production (frontend)
-
-Dans `web/`:
+Frontend : `http://localhost:5173` — API par défaut : `http://127.0.0.1:8088/api`.
 
 ```bash
-npm run build
+# API PHP (racine du dépôt)
+php -S 127.0.0.1:8088 -t app
 ```
 
-Sortie dans `web/dist/`.
-
-## Deploiement serveur
-
-Deux options simples.
-
-### Option A (recommandee): frontend statique + API PHP
-
-1. Builder le frontend (`web/dist`).
-2. Servir `web/dist` via Nginx/Apache (ou CDN statique).
-3. Servir `app/api` et `app/data` via PHP-FPM/Apache PHP.
-4. Configurer `VITE_API_BASE` au build pour pointer sur l'URL API publique.
-
-Exemple:
+Build production :
 
 ```bash
-# build avec URL API cible
-VITE_API_BASE="https://example.com/api" npm run build
+npm run build -w web
 ```
 
-### Option B: serveur PHP unique (simple)
+### Plugin Obsidian
 
-1. Builder le frontend.
-2. Copier le contenu de `web/dist` dans `app/public`.
-3. Lancer PHP en `-t app` (ou configurer VirtualHost sur `app`).
+```bash
+npm run build -w @obbwasm/core
+npm run build -w obsidian-plugin
+```
 
-## Flux fonctionnel actuel
+Copie locale vers le coffre : script `deployplugin.ps1` (à adapter selon votre chemin vault).
 
-1. Upload source (module Contenu)
-2. Conversion `Pandoc WASM -> Typst`
-3. Compilation `Typst WASM -> PDF`
-4. Preview PDF
-5. Reglages couverture/imposition
-6. Export du pack impression (ZIP)
+Release plugin (semver + tag → GitHub Actions) : `Release-Plugin.ps1`.
 
-## Notes importantes
+---
 
-- Le projet est oriente **WASM navigateur** pour la conversion/rendu.
-- L'endpoint `render-typst.php` existe encore pour debug serveur, mais le flux principal passe par Typst WASM dans le frontend.
-- `pandoc.wasm` est volumineux; le chargement est declenche a la demande.
+## 📁 Structure du dépôt
+
+```text
+obbwasm/
+  packages/obbwasm-core/   # Pandoc/Typst WASM, options livre, médias
+  obsidian-plugin/         # Extension Obsidian
+  web/                     # Interface React
+  typeset/                 # Gabarits Typst (layout, couverture, imposition)
+  app/                     # API PHP + données JSON
+  readme-media/            # Captures pour ce README
+```
+
+---
+
+## 🚀 Déploiement
+
+**Option A (recommandée)** : frontend statique (`web/dist`) + API PHP (`app/api`, `app/data`).
+
+```bash
+VITE_API_BASE="https://example.com/api" npm run build -w web
+```
+
+**Option B** : serveur PHP unique — copier `web/dist` dans `app/public`, servir avec `php -S` ou Apache/Nginx.
+
+Déploiement gabarits + site : voir `deploy.ps1` à la racine.
+
+---
+
+## ⚠️ Notes
+
+- `pandoc.wasm` et `typst_ts_web_compiler_bg.wasm` sont volumineux ; chargement à la demande.
+- Les gros documents peuvent prendre **plusieurs minutes** à compiler (Pandoc puis Typst) ; l’interface affiche une progression.
+- L’endpoint `render-typst.php` reste disponible pour du debug serveur ; le flux principal est WASM côté client.
+
+---
+
+## 🔗 Ressources
+
+| | |
+| --- | --- |
+| 🌐 **l'Atelier** | [atelier.atechnologie.fr](https://atelier.atechnologie.fr/) |
+| 📦 **Dépôt** | [github.com/Morglaf/obbwasm](https://github.com/Morglaf/obbwasm) |
+| 📄 **Pandoc** | [pandoc.org](https://pandoc.org/) |
+| 📐 **Typst** | [typst.app](https://typst.app/) |
+| 🔌 **Obsidian** | [obsidian.md](https://obsidian.md/) |
+
+---
+
+<div align="center">
+
+<sub>🇫🇷 <a href="README.md">Français</a> · <a href="README.en.md">🇬🇧 English</a> · <a href="README.de.md">🇩🇪 Deutsch</a> · <a href="README.es.md">🇪🇸 Español</a> · BookBrew / OBB WASM — <a href="https://atelier.atechnologie.fr/">l'Atelier</a></sub>
+
+</div>

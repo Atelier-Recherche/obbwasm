@@ -1,3 +1,5 @@
+import { injectTypstHeadingLabels, patchPandocTypstBrokenLabelRefs } from "./pandocTypstLabels.js";
+import { patchPandocTypstMedia } from "./pandocTypstMedia.js";
 function patchHr(typst, mode) {
     if (!typst.includes("horizontalrule"))
         return typst;
@@ -98,7 +100,9 @@ async function pandocBodyToTypstFragment(convert, body, markdownHorizontalRule) 
         return "";
     const result = await convert({ from: "markdown", to: "typst", standalone: false }, trimmed, {});
     let out = patchHr(result.stdout || "", markdownHorizontalRule);
-    out = patchPandocTypstObbWikiRefs(out);
+    out = patchPandocTypstObbWikiRefs(patchPandocTypstMedia(out));
+    out = injectTypstHeadingLabels(out);
+    out = patchPandocTypstBrokenLabelRefs(out);
     return out.trim();
 }
 /**

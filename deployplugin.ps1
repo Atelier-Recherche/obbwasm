@@ -22,7 +22,7 @@ finally {
 Write-Host "Copie vers $DestDir" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 
-$files = @("main.js", "styles.css", "manifest.json")
+$files = @("main.js", "styles.css", "manifest.json", "pdf.worker.min.mjs")
 if (Test-Path (Join-Path $PluginSrc "versions.json")) {
     $files += "versions.json"
 }

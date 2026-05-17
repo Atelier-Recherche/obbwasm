@@ -67,6 +67,10 @@ export declare function compileTypstBookToPdf(params: {
     fetchRemoteBytes?: (url: string) => Promise<Uint8Array | null>;
     /** Diagnostic virtualisation chemins (rempli si tableau fourni). */
     mediaDebugLog?: string[];
+    /** Rapport d’étape (Pandoc, médias, Typst…) pour l’UI. */
+    onCompilePhase?: (phase: string) => void;
+    /** Délai max compilation Typst WASM (ms). 0 = illimité. */
+    typstCompileTimeoutMs?: number;
     /** Pandoc WASM — requis pour générer glossaire / index depuis du Markdown. */
     pandocConvert?: PandocConvertFn;
     /** Contenu de la note « glossaire » (`# entrée` + définition). */

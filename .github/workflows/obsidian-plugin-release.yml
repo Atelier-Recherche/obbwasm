@@ -1,5 +1,14 @@
-# Release plugin Obsidian : déclenchée par un tag semver (ex. 0.1.1).
-# Voir Release-Plugin.ps1 à la racine du dépôt.
+# Release plugin Obsidian (tag semver x.y.z, sans préfixe "v").
+# Copier avec Release-Plugin.ps1 + obsidian-plugin/version-bump.mjs.
+#
+# CHECKLIST lors d'un nouveau dépôt / monorepo :
+# - permissions.contents: write
+# - checkout@v5, setup-node@v5, node 24, FORCE_JAVASCRIPT_ACTIONS_TO_NODE24
+# - npm ci : NE PAS installer tout le monorepo si un workspace a des deps OS-specific en direct
+#   (ex. @rolldown/binding-win32-x64-msvc → EBADPLATFORM sur ubuntu). Limiter -w aux workspaces utiles.
+# - body_path = même nom que $ReleaseNotesFile dans Release-Plugin.ps1 (commité avec le tag)
+# - chemins "files:" et "test -f" = préfixe dossier plugin (ci-dessous : obsidian-plugin/)
+#
 name: Obsidian plugin release
 
 on:
@@ -24,6 +33,7 @@ jobs:
           node-version: "24"
           cache: npm
 
+      # Monorepo : lister uniquement les workspaces nécessaires au plugin (évite web/ et deps win32).
       - name: Install dependencies (core + plugin)
         run: npm ci --include-workspace-root -w @obbwasm/core -w obsidian-plugin
 
@@ -36,6 +46,7 @@ jobs:
           test -f obsidian-plugin/manifest.json
           test -f obsidian-plugin/styles.css
           test -f obsidian-plugin/versions.json
+          test -f obsidian-plugin/pdf.worker.min.mjs
           test -f obsidian-plugin-release-notes.md
 
       - name: Create GitHub release (latest)
@@ -52,3 +63,4 @@ jobs:
             obsidian-plugin/manifest.json
             obsidian-plugin/styles.css
             obsidian-plugin/versions.json
+            obsidian-plugin/pdf.worker.min.mjs

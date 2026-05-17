@@ -1,3 +1,8 @@
+/**
+ * Synchronise manifest.json.version et versions.json après bump de package.json.
+ * Appelé par Release-Plugin.ps1 avec env npm_package_version=x.y.z (depuis le dossier plugin).
+ * Copier ce fichier à côté de manifest.json / versions.json du plugin cible.
+ */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";

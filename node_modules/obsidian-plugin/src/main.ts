@@ -3,6 +3,7 @@ import {
   buildImpositionMainTyp,
   chunkArray,
   compileTypstBookToPdf,
+  yieldToMainThread,
   createPandocConvertFromWasmBuffer,
   createTypstCompiler,
   defaultBookLayoutState,
@@ -12,6 +13,7 @@ import {
   pandocMarkdownToTypst,
   markdownHorizontalRuleFromBookValues,
   normalizeWikiImagesForPandoc,
+  resolveRemoteImageFetchUrl,
   normalizeBookCompileMeta,
   normalizeVaultCompilePaths,
   parseBookLayoutPresetJson,
@@ -55,12 +57,20 @@ import { migrateLegacyTypesetPath } from "./legacyTypesetPaths.js";
 import { listTypFiles } from "./listTypFiles.js";
 import { mergeManifestWithLocalDiscovered } from "./localTemplates.js";
 import { nodeFs, nodePath, tryNodeFs, tryNodePath } from "./platform.js";
-import { countPdfPages } from "./pdfPageCount.js";
+import { countPdfPages, initPdfJsWorker } from "./pdfPageCount.js";
 import type { TemplatesManifestV1 } from "./templatesManifest.js";
 import { DEFAULT_TEMPLATES_MANIFEST_URL, GITHUB_REPO_ARCHIVE_MAIN } from "./urls.js";
 import { PANDOC_WASM_DOWNLOAD_URL, TYPST_COMPILER_WASM_DOWNLOAD_URL } from "./wasmFetch.js";
 
 export const VIEW_TYPE_OBB = "obbwasm-book-preview";
+
+/** Au-delà, l’iframe PDF fait planter Obsidian sur de gros livres. */
+const PDF_PREVIEW_MAX_BYTES = 12 * 1024 * 1024;
+/** Comptage PDF.js optionnel au-delà de cette taille (économie mémoire). */
+const PDF_PAGE_COUNT_MAX_BYTES = 24 * 1024 * 1024;
+/** Hauteur par défaut du panneau aperçu PDF (redimensionnable). */
+const PREVIEW_PANEL_HEIGHT_DEFAULT = 360;
+const PREVIEW_PANEL_HEIGHT_MIN = 160;
 
 /** Chemins normalisés comparables (casse Windows pour chemins coffre). */
 function vaultPathsEqual(a: string, b: string): boolean {
@@ -108,7 +118,8 @@ function validateWasmPath(fs: typeof import("node:fs"), absPath: string, label: 
   if (st.size === 0) throw new Error(`${label}: fichier vide (0 octet) : ${p}`);
 }
 
-const RX_MD_IMG = /!\[[^\]]*]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+/** Évite de capturer des data: URI entiers (très longs) dans les refs d’images. */
+const RX_MD_IMG = /!\[[^\]]*]\(((?!data:)[^)\s]+)(?:\s+"[^"]*")?\)/g;
 const RX_WIKI_IMG = /!\[\[([^[\]]+)\]\]/g;
 
 function extractMarkdownImageRefs(source: string): string[] {
@@ -118,7 +129,7 @@ function extractMarkdownImageRefs(source: string): string[] {
     let m: RegExpExecArray | null;
     while ((m = rx.exec(source)) !== null) {
       const raw = (m[1] ?? "").trim();
-      if (!raw) continue;
+      if (!raw || /^data:/i.test(raw)) continue;
       const noAlias = raw.split("|")[0]?.trim() ?? raw;
       const noAnchor = noAlias.split("#")[0]?.trim() ?? noAlias;
       if (noAnchor) out.add(noAnchor);
@@ -244,6 +255,8 @@ interface ObbWasmPluginSettings {
   nameIndexVaultPath: string;
   /** Préréglages de mise en page sauvegardés dans l’extension (JSON tableau). */
   bookPresetsStoredJson: string;
+  /** Hauteur du panneau aperçu PDF (px), réglable par glisser-déposer. */
+  previewPanelHeightPx: number;
 }
 
 const DEFAULT_SETTINGS: ObbWasmPluginSettings = {
@@ -266,6 +279,7 @@ const DEFAULT_SETTINGS: ObbWasmPluginSettings = {
   glossaryVaultPath: "",
   nameIndexVaultPath: "",
   bookPresetsStoredJson: "",
+  previewPanelHeightPx: PREVIEW_PANEL_HEIGHT_DEFAULT,
 };
 
 export default class ObbWasmBookPlugin extends Plugin {
@@ -277,8 +291,29 @@ export default class ObbWasmBookPlugin extends Plugin {
   templateMeta: TemplateMeta | null = null;
   /** Dernier PDF intérieur produit par « Compiler la note » — utilisé pour l’imposition. */
   lastInteriorPdf: Uint8Array | null = null;
+  /** Vue livre ouverte — mise à jour du statut de compilation. */
+  private bookPreviewView: ObbBookView | null = null;
+
+  /** URI du worker PDF.js (requis pour compter les pages / imposition). */
+  private configurePdfJsWorker(): void {
+    const rel = normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}/pdf.worker.min.mjs`);
+    try {
+      initPdfJsWorker(this.app.vault.adapter.getResourcePath(rel));
+      return;
+    } catch {
+      /* fallback desktop */
+    }
+    const path = nodePath();
+    const fs = tryNodeFs();
+    if (!fs) return;
+    const abs = path.join(this.pluginDir(), "pdf.worker.min.mjs");
+    if (!fs.existsSync(abs)) return;
+    const href = abs.replace(/\\/g, "/");
+    initPdfJsWorker(href.startsWith("/") ? `file://${href}` : `file:///${href}`);
+  }
 
   async onload(): Promise<void> {
+    this.configurePdfJsWorker();
     await this.loadSettings();
     this.resolveTemplatesManifest();
     await this.refreshTemplateMeta();
@@ -373,6 +408,11 @@ export default class ObbWasmBookPlugin extends Plugin {
     const th = Number(this.settings.impositionPaperThicknessMm);
     this.settings.impositionPaperThicknessMm =
       Number.isFinite(th) && th > 0 ? Number(th.toFixed(4)) : 0.1;
+    const ph = Number(this.settings.previewPanelHeightPx);
+    this.settings.previewPanelHeightPx =
+      Number.isFinite(ph) && ph >= PREVIEW_PANEL_HEIGHT_MIN
+        ? Math.round(ph)
+        : PREVIEW_PANEL_HEIGHT_DEFAULT;
     await this.ensureCoverImpositionDefaults();
   }
 
@@ -624,11 +664,12 @@ export default class ObbWasmBookPlugin extends Plugin {
       if (!ref || /^data:/i.test(ref) || /^\/\//.test(ref)) continue;
       if (/^https?:\/\//i.test(ref)) {
         try {
+          const fetchUrl = resolveRemoteImageFetchUrl(ref.trim());
           const res = await requestUrl({
-            url: ref.trim(),
+            url: fetchUrl,
             method: "GET",
             throw: false,
-            headers: httpHeadersForImageRequest(ref.trim()),
+            headers: httpHeadersForImageRequest(fetchUrl),
           });
           if (res.status !== 200 || !res.arrayBuffer) continue;
           const blob = new Blob([new Uint8Array(res.arrayBuffer)]);
@@ -893,6 +934,10 @@ export default class ObbWasmBookPlugin extends Plugin {
     return out;
   }
 
+  reportCompilePhase(phase: string): void {
+    this.bookPreviewView?.setStatus(`Compilation… (${phase})`, { busy: true });
+  }
+
   async loadBookLayoutPresetFromFile(relPath: string): Promise<void> {
     requireDesktopFs();
     const fs = nodeFs();
@@ -934,6 +979,9 @@ export default class ObbWasmBookPlugin extends Plugin {
     const { bibliography, csl } = await this.resolveBibliographyForPandoc();
     const glossaryMarkdown = await this.readVaultTextRelative(this.settings.glossaryVaultPath);
     const nameIndexMarkdown = await this.readVaultTextRelative(this.settings.nameIndexVaultPath);
+    const reportPhase = (msg: string) => this.reportCompilePhase(msg);
+    reportPhase("Pandoc…");
+    await yieldToMainThread();
     const { typst, stderr, mediaFiles } = await pandocMarkdownToTypst({
       convert,
       sourceFormat: "md",
@@ -944,6 +992,7 @@ export default class ObbWasmBookPlugin extends Plugin {
       csl,
       markdownHorizontalRule: markdownHorizontalRuleFromBookValues(bookLayout.values),
     });
+    await yieldToMainThread();
     mediaDebugLog?.push(`[pandoc] stderr (${stderr.length} car.) : ${stderr.slice(0, 600)}`);
     mediaDebugLog?.push(`[pandoc] mediaFiles (${Object.keys(mediaFiles).length}) : ${Object.keys(mediaFiles).join(", ") || "(vide)"}`);
     mediaDebugLog?.push(`[typst brut] ${typst.match(/image\s*\(/g)?.length ?? 0} appel(s) image(`);
@@ -977,15 +1026,18 @@ export default class ObbWasmBookPlugin extends Plugin {
       nameIndexMarkdown: nameIndexMarkdown ?? undefined,
       mediaFiles,
       mediaDebugLog,
+      onCompilePhase: reportPhase,
+      typstCompileTimeoutMs: 600_000,
       fetchRemoteBytes: async (url: string) => {
         try {
+          const fetchUrl = resolveRemoteImageFetchUrl(url);
           const res = await requestUrl({
-            url,
+            url: fetchUrl,
             method: "GET",
             throw: false,
-            headers: httpHeadersForImageRequest(url),
+            headers: httpHeadersForImageRequest(fetchUrl),
           });
-          mediaDebugLog?.push(`[http] ${url.slice(0, 100)} → status ${res.status}`);
+          mediaDebugLog?.push(`[http] ${fetchUrl.slice(0, 100)} → status ${res.status}`);
           if (res.status !== 200 || !res.arrayBuffer) return null;
           return new Uint8Array(res.arrayBuffer);
         } catch {
@@ -1000,19 +1052,20 @@ export default class ObbWasmBookPlugin extends Plugin {
       const msg = JSON.stringify(out.diagnostics ?? []);
       throw new Error(`Compilation sans PDF. ${msg.slice(0, 400)}`);
     }
-    const pdfCopy = new Uint8Array(out.pdf);
-    this.lastInteriorPdf = pdfCopy;
+    this.lastInteriorPdf = new Uint8Array(out.pdf);
     try {
-      const pc = await countPdfPages(new Uint8Array(out.pdf));
-      if (pc > 0) {
-        this.settings.innerPages = pc;
-        await this.saveSettings();
+      if (out.pdf.byteLength <= PDF_PAGE_COUNT_MAX_BYTES) {
+        const pc = await countPdfPages(out.pdf);
+        if (pc > 0) {
+          this.settings.innerPages = pc;
+          await this.saveSettings();
+        }
       }
     } catch {
       /* ignore */
     }
     return {
-      pdf: out.pdf,
+      pdf: this.lastInteriorPdf,
       fileBase: file.basename.replace(/\.md$/i, ""),
       folder: file.parent?.path ?? "",
     };
@@ -1187,6 +1240,8 @@ class ObbBookView extends ItemView {
 
   private frame!: HTMLIFrameElement;
   private statusEl!: HTMLDivElement;
+  private statusTextEl!: HTMLElement;
+  private compileActionButtons: HTMLButtonElement[] = [];
   private spineHintEl!: HTMLSpanElement;
   private innerPagesInput!: HTMLInputElement;
   private bookOptsRoot!: HTMLElement;
@@ -1202,6 +1257,13 @@ class ObbBookView extends ItemView {
   private bookOptSectionOpen: Partial<Record<string, boolean>> = {};
   /** Dernière URL blob de l’aperçu PDF — révoquée avec délai pour éviter un crash iframe. */
   private previewBlobUrl: string | null = null;
+  /** Panneau aperçu PDF (bas de la vue) — replié par défaut. */
+  private previewPanelOpen = false;
+  private previewPanelRoot!: HTMLElement;
+  private previewPanelBody!: HTMLElement;
+  private previewResizeHandle!: HTMLElement;
+  private previewPanelChevron!: HTMLElement;
+  private previewResizeCleanup: (() => void) | null = null;
 
   private bindMeta(input: HTMLInputElement, key: "title" | "author" | "publisher"): void {
     input.value = this.plugin.settings[key];
@@ -1216,12 +1278,90 @@ class ObbBookView extends ItemView {
     this.spineHintEl.setText(`Épaisseur dos estimée : ${spine} mm (pages intérieures × grammage).`);
   }
 
+  private setPreviewPanelOpen(open: boolean): void {
+    this.previewPanelOpen = open;
+    if (this.previewPanelBody) this.previewPanelBody.hidden = !open;
+    if (this.previewResizeHandle) this.previewResizeHandle.hidden = !open;
+    if (this.previewPanelChevron) this.previewPanelChevron.textContent = open ? "▾" : "▸";
+  }
+
+  private getPreviewPanelHeightLimits(): { min: number; max: number } {
+    const min = PREVIEW_PANEL_HEIGHT_MIN;
+    const viewH = this.contentEl?.clientHeight ?? 600;
+    const max = Math.max(min, Math.floor(viewH * 0.92));
+    return { min, max };
+  }
+
+  private applyPreviewPanelHeight(px: number): void {
+    if (!this.previewPanelBody) return;
+    const { min, max } = this.getPreviewPanelHeightLimits();
+    const h = Math.min(max, Math.max(min, Math.round(px)));
+    this.previewPanelBody.style.height = `${h}px`;
+    this.previewPanelBody.style.flexBasis = `${h}px`;
+  }
+
+  private readPreviewPanelHeight(): number {
+    const { min, max } = this.getPreviewPanelHeightLimits();
+    const saved = this.plugin.settings.previewPanelHeightPx;
+    return Math.min(max, Math.max(min, saved));
+  }
+
+  private setupPreviewPanelResize(handle: HTMLElement): void {
+    this.previewResizeCleanup?.();
+    let startY = 0;
+    let startH = 0;
+
+    const onPointerMove = (e: PointerEvent) => {
+      const dy = startY - e.clientY;
+      this.applyPreviewPanelHeight(startH + dy);
+    };
+
+    const onPointerUp = async (e: PointerEvent) => {
+      handle.releasePointerCapture(e.pointerId);
+      handle.classList.remove("obbwasm-preview-resize-handle--active");
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      const h = this.previewPanelBody?.clientHeight ?? startH;
+      const { min, max } = this.getPreviewPanelHeightLimits();
+      const clamped = Math.min(max, Math.max(min, h));
+      this.plugin.settings.previewPanelHeightPx = clamped;
+      await this.plugin.saveSettings();
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0 || !this.previewPanelOpen) return;
+      e.preventDefault();
+      startY = e.clientY;
+      startH = this.previewPanelBody?.clientHeight ?? this.readPreviewPanelHeight();
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add("obbwasm-preview-resize-handle--active");
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointercancel", onPointerUp);
+    };
+
+    handle.addEventListener("pointerdown", onPointerDown);
+    this.previewResizeCleanup = () => {
+      handle.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+    };
+  }
+
   private showPdfPreview(data: Uint8Array): void {
-    const blob = new Blob([new Uint8Array(data)], { type: "application/pdf" });
+    if (data.byteLength > PDF_PREVIEW_MAX_BYTES) {
+      this.clearPdfPreview();
+      this.setPreviewPanelOpen(false);
+      return;
+    }
+    const blob = new Blob([data], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const previous = this.previewBlobUrl;
     this.previewBlobUrl = url;
     this.frame.src = url;
+    this.setPreviewPanelOpen(true);
     if (previous?.startsWith("blob:")) {
       window.setTimeout(() => URL.revokeObjectURL(previous), 750);
     }
@@ -1292,6 +1432,7 @@ class ObbBookView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    this.plugin.bookPreviewView = this;
     this.plugin.resolveTemplatesManifest();
     await this.plugin.refreshTemplateMeta();
     const container = this.contentEl;
@@ -1421,11 +1562,14 @@ class ObbBookView extends ItemView {
     await this.rebuildBookOptionsUI();
 
     scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Intérieur" });
-    const intSec = scroll.createDiv({ cls: "obbwasm-section obbwasm-actions-row" });
-    intSec.createEl("button", { text: "Compiler la note active → PDF" }, (b) => {
+    const intSec = scroll.createDiv({ cls: "obbwasm-section" });
+    const intActions = intSec.createDiv({ cls: "obbwasm-actions-row" });
+    intActions.createEl("button", { text: "Compiler la note active → PDF" }, (b) => {
       b.addClass("mod-cta");
+      this.compileActionButtons.push(b);
       b.addEventListener("click", () => void this.runCompile());
     });
+    this.mountCompileStatusRow(intSec);
 
     scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Couverture" });
     const covSec = scroll.createDiv({ cls: "obbwasm-section" });
@@ -1518,14 +1662,41 @@ class ObbBookView extends ItemView {
       b.addEventListener("click", () => void this.runImposition());
     });
 
-    const status = container.createDiv({ cls: "obbwasm-view-status", text: "Prêt." });
-    const frameHolder = container.createDiv({ cls: "obbwasm-view-body" });
+    this.previewPanelRoot = container.createDiv({ cls: "obbwasm-preview-panel" });
+    const previewToggle = this.previewPanelRoot.createEl("button", {
+      cls: "obbwasm-preview-panel-toggle",
+      type: "button",
+    });
+    this.previewPanelChevron = previewToggle.createSpan({ cls: "obbwasm-preview-chevron", text: "▸" });
+    previewToggle.createSpan({ text: " Aperçu PDF" });
+    previewToggle.addEventListener("click", () => {
+      this.setPreviewPanelOpen(!this.previewPanelOpen);
+    });
+
+    this.previewResizeHandle = this.previewPanelRoot.createDiv({
+      cls: "obbwasm-preview-resize-handle",
+      attr: { title: "Glisser pour redimensionner l’aperçu" },
+    });
+    this.previewResizeHandle.hidden = true;
+    this.setupPreviewPanelResize(this.previewResizeHandle);
+
+    this.previewPanelBody = this.previewPanelRoot.createDiv({ cls: "obbwasm-preview-panel-body" });
+    this.previewPanelBody.hidden = true;
+    this.applyPreviewPanelHeight(this.readPreviewPanelHeight());
+
+    const frameHolder = this.previewPanelBody.createDiv({ cls: "obbwasm-view-body" });
     const iframe = frameHolder.createEl("iframe", {
       cls: "obbwasm-preview-frame",
       attr: { title: "Aperçu PDF" },
     });
     this.frame = iframe;
-    this.statusEl = status;
+  }
+
+  private mountCompileStatusRow(container: HTMLElement): void {
+    const row = container.createDiv({ cls: "obbwasm-view-status" });
+    row.createSpan({ cls: "obbwasm-status-spinner", attr: { "aria-hidden": "true" } });
+    this.statusTextEl = row.createSpan({ cls: "obbwasm-status-text", text: "Prêt." });
+    this.statusEl = row;
   }
 
   private labeledText(container: HTMLElement, label: string): HTMLInputElement {
@@ -1534,12 +1705,20 @@ class ObbBookView extends ItemView {
     return row.createEl("input", { type: "text", cls: "obbwasm-field-input" });
   }
 
-  setStatus(msg: string): void {
-    this.statusEl.setText(msg);
+  setStatus(msg: string, options?: { busy?: boolean }): void {
+    if (this.statusTextEl) this.statusTextEl.setText(msg);
+    if (options?.busy !== undefined) this.setCompileBusy(options.busy);
+  }
+
+  setCompileBusy(busy: boolean): void {
+    this.statusEl?.toggleClass("obbwasm-view-status--busy", busy);
+    for (const btn of this.compileActionButtons) btn.disabled = busy;
   }
 
   async runCompile(): Promise<void> {
-    this.setStatus("Compilation…");
+    this.setCompileBusy(true);
+    this.setStatus("Compilation… — les gros fichiers peuvent prendre plusieurs minutes.");
+    this.setPreviewPanelOpen(true);
     try {
       if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb"))) {
         throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
@@ -1547,20 +1726,32 @@ class ObbBookView extends ItemView {
       const { pdf, fileBase } = await this.plugin.compileActiveNoteToPdf();
       this.clearPdfPreview();
       const dest = await this.plugin.saveAuxPdf(pdf, "-obb");
-      this.showPdfPreview(pdf);
-      this.setStatus(`OK — ${fileBase}.pdf (${pdf.byteLength} octets)`);
-      new Notice(`PDF enregistré : ${dest}`);
+      const previewSkipped = pdf.byteLength > PDF_PREVIEW_MAX_BYTES;
+      if (!previewSkipped) this.showPdfPreview(pdf);
+      this.setStatus(
+        previewSkipped
+          ? `OK — ${fileBase}.pdf (${pdf.byteLength} octets, aperçu désactivé — PDF volumineux)`
+          : `OK — ${fileBase}.pdf (${pdf.byteLength} octets)`,
+      );
+      new Notice(
+        previewSkipped
+          ? `PDF enregistré : ${dest} (aperçu désactivé, fichier volumineux)`
+          : `PDF enregistré : ${dest}`,
+      );
       this.innerPagesInput.value = String(this.plugin.settings.innerPages);
       this.updateSpineHint();
     } catch (e) {
       const msg = (e as Error).message;
       this.setStatus(`Erreur : ${msg}`);
       new Notice(msg, 8000);
+    } finally {
+      this.setCompileBusy(false);
     }
   }
 
   async runCover(): Promise<void> {
-    this.setStatus("Couverture…");
+    this.setCompileBusy(true);
+    this.setStatus("Couverture…", { busy: true });
     try {
       if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb-cover"))) {
         throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
@@ -1575,11 +1766,14 @@ class ObbBookView extends ItemView {
       const msg = (e as Error).message;
       this.setStatus(`Erreur : ${msg}`);
       new Notice(msg, 8000);
+    } finally {
+      this.setCompileBusy(false);
     }
   }
 
   async runImposition(): Promise<void> {
-    this.setStatus("Imposition…");
+    this.setCompileBusy(true);
+    this.setStatus("Imposition…", { busy: true });
     try {
       if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb-imposition"))) {
         throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
@@ -1594,10 +1788,16 @@ class ObbBookView extends ItemView {
       const msg = (e as Error).message;
       this.setStatus(`Erreur : ${msg}`);
       new Notice(msg, 8000);
+    } finally {
+      this.setCompileBusy(false);
     }
   }
 
   async onClose(): Promise<void> {
+    this.previewResizeCleanup?.();
+    this.previewResizeCleanup = null;
+    this.setCompileBusy(false);
+    if (this.plugin.bookPreviewView === this) this.plugin.bookPreviewView = null;
     if (this.previewBlobUrl?.startsWith("blob:")) {
       URL.revokeObjectURL(this.previewBlobUrl);
       this.previewBlobUrl = null;

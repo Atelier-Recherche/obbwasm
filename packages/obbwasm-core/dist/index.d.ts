@@ -1,3 +1,5 @@
+export * from "./asyncYield.js";
+export * from "./markdownDataUriImages.js";
 export * from "./assetLoader.js";
 export * from "./bookPresets.js";
 export * from "./bookOptions/defaults.js";
@@ -15,8 +17,11 @@ export * from "./typstPackages.js";
 export * from "./typstHelpers.js";
 export * from "./wikiGlossaryIndex.js";
 export * from "./imageFormat.js";
+export * from "./remoteImageUrl.js";
 export * from "./typstCompiler.js";
 export * from "./pandocMarkdown.js";
+export * from "./pandocTypstMedia.js";
+export * from "./pandocTypstLabels.js";
 export * from "./pandocTypstBibliography.js";
 export * from "./pandocFactory.js";
 export * from "./typstVirtualMedia.js";

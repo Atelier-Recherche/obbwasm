@@ -21,6 +21,12 @@ if (!fs.existsSync(typstWasmCoreAbs)) {
   throw new Error(`typst wasm pkg introuvable : ${typstWasmCoreAbs}`);
 }
 
+const workerSrc = path.join(rootNodeModules, "pdfjs-dist", "build", "pdf.worker.min.mjs");
+const workerDest = path.join(__dirname, "pdf.worker.min.mjs");
+if (!fs.existsSync(workerSrc)) {
+  throw new Error(`pdfjs worker introuvable : ${workerSrc}`);
+}
+
 await esbuild.build({
   entryPoints: [path.join(__dirname, "src/main.ts")],
   bundle: true,
@@ -50,3 +56,6 @@ await esbuild.build({
     },
   ],
 });
+
+fs.copyFileSync(workerSrc, workerDest);
+console.log(`Copié : pdf.worker.min.mjs → ${workerDest}`);
