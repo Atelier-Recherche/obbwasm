@@ -4,8 +4,7 @@
 	"version": "0.1.1",
 	"minAppVersion": "1.5.0",
 	"description": "Composition livre Markdown → PDF (Pandoc + Typst WASM), gabarits téléchargeables.",
-	"author": "l'Atelier",
-	"authorUrl": "https://atelier.atechnologie.fr/activites/programmation-doutils/",
+	"author": "obbwasm",
 	"isDesktopOnly": false,
 	"main": "main.js"
 }
