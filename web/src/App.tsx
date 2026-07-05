@@ -44,7 +44,8 @@ import {
   mountTypstPackagesFromLoader,
   overrideTypstLet,
   firstDiagnosticMessage,
-  buildImpositionMainTyp,
+  buildImpositionTyp,
+  parseImpositionMeta,
   chunkArray,
   parseImpositionTemplateSpec,
   reorderSpreadSequence,
@@ -711,7 +712,18 @@ export default function App() {
       compiler.mapShadow("/export.pdf", pdfBytes);
       compiler.mapShadow("export.pdf", pdfBytes);
       const compensationMm = Number((-11 * impositionPaperThicknessMm).toFixed(2));
-      const mainSource = buildImpositionMainTyp(spec.kind, spec.packetSize, packets, compensationMm);
+      const templateSource = (await phpAssetLoader.fetchTextFile(path)) ?? "";
+      const layout = parseImpositionMeta(templateSource);
+      if (layout) {
+        pushLog(`Imposition meta: mode=${layout.mode}, grille=${layout.gridCols}x${layout.gridRows}, feuille=${layout.sheetWidth}x${layout.sheetHeight}`);
+      }
+      const mainSource = buildImpositionTyp({
+        layout,
+        kind: spec.kind,
+        packetSize: spec.packetSize,
+        packets,
+        compensationMm,
+      });
       compiler.addSource("/main.typ", mainSource);
       const compiled = await compiler.runWithWorld(
         { root: "/", mainFilePath: "/main.typ", inputs: {} },

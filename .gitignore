@@ -7,3 +7,16 @@ app/api/auth-config.local.php
 # Déploiement : secrets FTP / chemins machine (copier depuis un modèle local si besoin)
 deploy.ps1
 deploy.local.ps1
+dora
+
+# Gabarit Dora6 personnel
+typeset/layout/French-dora6-layout.typ
+typeset/cover/French-dora6-cover-A4.typ
+typeset/impose/dora6-A3-16signature.typ
+typeset/impose/dora6-A4-8signature.typ
+typeset/fonts/FeFCrm2.ttf
+typeset/fonts/FeFCit2.ttf
+typeset/fonts/FeENsc2.ttf
+typeset/fonts/FeFCrm2bold.ttf
+typeset/fonts/FeFCit2bold.ttf
+typeset/presets/french-dora6-*.json

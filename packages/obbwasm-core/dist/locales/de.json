@@ -82,7 +82,7 @@
         "chapterTitleInHeader": { "label": "Kapiteltitel in der Kopfzeile" },
         "pageNumberPlacement": {
             "label": "Seitenzahlenposition",
-            "values": { "spread": "Links–rechts", "center": "Mitte", "outer": "Außen (Spread)" }
+            "values": { "spread": "Innen", "center": "Mitte", "outer": "Außen" }
         },
         "headerFooterRule": {
             "label": "Trennlinie (Kopf/Fuß)",
@@ -143,6 +143,7 @@
         "titlePage": { "label": "Titelseite / Impressum" },
         "frontTitleRectoBlankBefore": { "label": "Titelseite — Recto + Leerseite davor" },
         "sectionNewPage": { "label": "Seitenumbruch vor jedem H1" },
+        "hidePageNumberOnSectionTitle": { "label": "Seitenzahl auf Kapiteltitel-Seiten (H1) ausblenden" },
         "sectionTitleRectoBlankBefore": { "label": "Kapitel (H1) — Recto + Leerseite davor" },
         "tocPosition": {
             "label": "Inhaltsverzeichnis",

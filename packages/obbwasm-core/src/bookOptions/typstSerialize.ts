@@ -89,6 +89,7 @@ export function buildTypstOptsLines(
     `    title-page: ${typstBool(getBool("title-page"))},`,
     `    front-title-recto-with-blank-before: ${typstBool(getBool("front-title-recto-with-blank-before"))},`,
     `    section-new-page: ${typstBool(getBool("section-new-page"))},`,
+    `    hide-page-number-on-section-title: ${typstBool(v["hide-page-number-on-section-title"] !== false)},`,
     `    section-title-recto-with-blank-before: ${typstBool(getBool("section-title-recto-with-blank-before"))},`,
     `    toc-at-start: ${typstBool(tocAtStart)},`,
     `    toc-at-end: ${typstBool(tocAtEnd)},`,

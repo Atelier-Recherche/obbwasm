@@ -97,7 +97,7 @@
     "chapterTitleInHeader": { "label": "Affichage du titre de chapitre en en-tête" },
     "pageNumberPlacement": {
       "label": "Position des numéros de page",
-      "values": { "spread": "Gauche–droite", "center": "Centre", "outer": "Extérieur (recto-verso)" }
+      "values": { "spread": "Intérieur", "center": "Centre", "outer": "Extérieur" }
     },
     "headerFooterRule": {
       "label": "Ligne de séparation (en-tête / pied)",

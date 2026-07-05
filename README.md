@@ -151,6 +151,19 @@ Déploiement gabarits + site : voir `deploy.ps1` à la racine.
 
 ---
 
+## Conformité catalogue Obsidian (plugin)
+
+| Élément | Détail |
+| --- | --- |
+| **ID plugin** | `obbwasm-book` |
+| **Licence** | MIT — [LICENSE](LICENSE) |
+| **Réseau** | Oui — téléchargement optionnel de gabarits Typst depuis GitHub (configurable) ; images distantes dans les documents si présentes dans le Markdown |
+| **Fichiers hors vault** | accès aux fichiers du coffre Obsidian pour la composition |
+| **Télémétrie / mise à jour auto** | non |
+| **Release** | `.\Release-Plugin.ps1` |
+
+---
+
 ## ⚠️ Notes
 
 - `pandoc.wasm` et `typst_ts_web_compiler_bg.wasm` sont volumineux ; chargement à la demande.

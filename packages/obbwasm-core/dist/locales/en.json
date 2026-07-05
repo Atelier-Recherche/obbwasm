@@ -82,7 +82,7 @@
         "chapterTitleInHeader": { "label": "Show chapter title in header" },
         "pageNumberPlacement": {
             "label": "Page number placement",
-            "values": { "spread": "Left–right", "center": "Center", "outer": "Outside (spread binding)" }
+            "values": { "spread": "Inside", "center": "Center", "outer": "Outside" }
         },
         "headerFooterRule": {
             "label": "Separator rule (header/footer)",
@@ -143,6 +143,7 @@
         "titlePage": { "label": "Title / credits page" },
         "frontTitleRectoBlankBefore": { "label": "Title page — recto + blank verso before" },
         "sectionNewPage": { "label": "Page break before each H1" },
+        "hidePageNumberOnSectionTitle": { "label": "Hide page number on section title pages (H1)" },
         "sectionTitleRectoBlankBefore": { "label": "Chapters (H1) — recto + blank before" },
         "tocPosition": {
             "label": "Table of contents",

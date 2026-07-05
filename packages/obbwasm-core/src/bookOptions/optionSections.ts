@@ -19,6 +19,7 @@ export const BOOK_OPTION_SECTION_IDS: Record<BookOptionSectionKey, string[]> = {
     "title-page",
     "front-title-recto-with-blank-before",
     "section-new-page",
+    "hide-page-number-on-section-title",
     "section-title-recto-with-blank-before",
     "toc-position",
     "toc-depth",

@@ -26,4 +26,5 @@ export * from "./pandocTypstBibliography.js";
 export * from "./pandocFactory.js";
 export * from "./typstVirtualMedia.js";
 export * from "./imposition.js";
+export * from "./typstFontShadow.js";
 //# sourceMappingURL=index.d.ts.map

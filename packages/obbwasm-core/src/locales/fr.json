@@ -82,7 +82,7 @@
     "chapterTitleInHeader": { "label": "Affichage du titre de chapitre en en-tête" },
     "pageNumberPlacement": {
       "label": "Position des numéros de page",
-      "values": { "spread": "Gauche–droite", "center": "Centre", "outer": "Extérieur (recto-verso)" }
+      "values": { "spread": "Intérieur", "center": "Centre", "outer": "Extérieur" }
     },
     "headerFooterRule": {
       "label": "Ligne de séparation (en-tête / pied)",
@@ -147,6 +147,7 @@
     "titlePage": { "label": "Page de titre / crédits" },
     "frontTitleRectoBlankBefore": { "label": "Page de titre — recto + page vierge avant" },
     "sectionNewPage": { "label": "Saut de page automatique sur chaque H1" },
+    "hidePageNumberOnSectionTitle": { "label": "Masquer le numéro sur les pages de titre (H1)" },
     "sectionTitleRectoBlankBefore": { "label": "Chapitres (H1) — recto + page vierge avant" },
     "tocPosition": {
       "label": "Table des matières (TOC)",

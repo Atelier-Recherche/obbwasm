@@ -2,6 +2,7 @@ import { buildTypstOptsLines } from "./bookOptions/typstSerialize.js";
 import { resolveDocStrings } from "./bookOptions/docStrings.js";
 import { BOOK_OPTIONS_DEFAULTS_PATH } from "./assetLoader.js";
 import { mountTypstPackagesFromLoader } from "./typstPackages.js";
+import { mountTypstFontShadows } from "./typstFontShadow.js";
 import { virtualizeTypstMediaPaths } from "./typstVirtualMedia.js";
 import { splitPandocTypstBodyAndBibliography } from "./pandocTypstBibliography.js";
 import { withAsyncTimeout, yieldToMainThread } from "./asyncYield.js";
@@ -30,6 +31,10 @@ export function normalizePandocCitationPageShorthand(markdown) {
     s = s.replace(/\[@([^\s\],]+)\s+p(\d+)\]/g, "[@$1, $2]");
     return s;
 }
+/** Pandoc sans citeproc laisse des clés brutes (@clef) dans le Typst émis. */
+export function detectUnprocessedPandocCitations(typst) {
+    return /\s@[A-Za-z][\w:-]*(?:[.,;:!?)}\]]|\s|$)/.test(typst);
+}
 /** Lit l’option livre « Séparateur Markdown » (registre : `markdown-horizontal-rule`). */
 export function markdownHorizontalRuleFromBookValues(values) {
     return values["markdown-horizontal-rule"] === "pagebreak" ? "pagebreak" : "line";
@@ -47,7 +52,9 @@ export function patchPandocTypstFragments(typst, mode = "line") {
 export async function pandocMarkdownToTypst(params) {
     const { convert, sourceFormat = "md", sourceText, sourceBlob, sourceFileName, titleFallback, bibliography, csl, extraFiles, markdownHorizontalRule = "line", } = params;
     const from = sourceFormat === "md"
-        ? "markdown"
+        ? bibliography
+            ? "markdown+footnotes+citations"
+            : "markdown+footnotes"
         : sourceFormat === "txt"
             ? "plain"
             : sourceFormat;
@@ -101,6 +108,14 @@ export async function pandocMarkdownToTypst(params) {
     }
     const result = await convert(options, stdin, files);
     let out = patchPandocTypstObbWikiRefs(patchPandocTypstMedia(patchPandocTypstFragments(result.stdout || "", markdownHorizontalRule)));
+    let stderr = result.stderr || "";
+    if (bibliography && detectUnprocessedPandocCitations(out)) {
+        stderr += "\n[obbwasm] citeproc : clés @… encore présentes dans le Typst (vérifiez le .bib).";
+    }
+    else if (!bibliography && detectUnprocessedPandocCitations(out)) {
+        stderr +=
+            "\n[obbwasm] Citations non formatées : renseignez le fichier .bib (paramètres plugin → Citations).";
+    }
     out = injectTypstHeadingLabels(out);
     out = patchPandocTypstBrokenLabelRefs(out);
     const mediaFiles = {};
@@ -125,7 +140,7 @@ export async function pandocMarkdownToTypst(params) {
             mediaFiles,
         };
     }
-    return { typst: out, stderr: result.stderr || "", mediaFiles };
+    return { typst: out, stderr, mediaFiles };
 }
 export async function compileTypstBookToPdf(params) {
     const { compiler, loader, templateMainSource, bookLayout, meta, fetchRemoteBytes } = params;
@@ -162,6 +177,7 @@ export async function compileTypstBookToPdf(params) {
     compiler.reset();
     compiler.resetShadow();
     await mountTypstPackagesFromLoader(compiler, loader);
+    await mountTypstFontShadows(compiler, loader);
     for (const [rel, bytes] of Object.entries(mediaFiles ?? {})) {
         const norm = rel.replace(/\\/g, "/").replace(/^\/+/, "");
         if (!norm)

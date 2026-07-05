@@ -1,15 +1,27 @@
 // @obbwasm-meta begin
-// nom-complet: Gabarits pour livre format BrochSnob5 avec police Garamond
-// version: v2.0
-// detail: Modèle B5 (143.5mm x 210mm), options ObbWasm (registre partagé + ordre des sections).
-// format: brsnoba5
-// supported-options: chapter-title-in-header, page-number-placement, header-footer-rule, page-number-style, auto-heading-numbering, h1-typography, drop-cap-first-para, line-spacing-preset, line-spacing-em, body-text-alignment, chapter-start-odd, binding-gutter-mm, transition-blank-style, caption-position, footnote-scope, image-treatment, accent-color, show-index, list-figures-style, show-glossary, cover-page, half-title-page, title-page, front-title-recto-with-blank-before, section-new-page, hide-page-number-on-section-title, section-title-recto-with-blank-before, toc-position, toc-depth, bibliography-position, widows-orphans, show-annexes, show-back-cover
+// nom-complet: IMfrench Dora6 
+// version: v1.0
+// detail: Modèle 91.77mm x 148.5mm, titres FeENsc2, corps FeFCrm2 (9pt × 0.90).
+// format: dora6
+// supported-options: chapter-title-in-header, page-number-placement, page-number-style, auto-heading-numbering, line-spacing-preset, line-spacing-em, body-text-alignment, chapter-start-odd, binding-gutter-mm, half-title-page, title-page, front-title-recto-with-blank-before, section-new-page, hide-page-number-on-section-title, section-title-recto-with-blank-before, toc-position, toc-depth, bibliography-position, widows-orphans, show-index, show-glossary, show-annexes, show-back-cover
 // @obbwasm-meta end
 
 #import "/typeset/shared/book-options-defaults.typ": book-options-defaults
 
+#let body-font = "IM FELL French Canon"
+#let title-font = "IM FELL English"
+#let header-font = "IM FELL French Canon"
+
+// FeFCrm2 / FeFCit2 / FeFCrm2bold / FeFCit2bold — même famille, variantes via weight + style.
+#let apply-dora-text-styles() = {
+  set strong(delta: 0)
+  show strong: set text(font: body-font, weight: "bold")
+  show emph: set text(font: body-font, style: "italic")
+}
+
 #let _section-open-page(conf) = {
   if conf.section-title-recto-with-blank-before {
+    // Équivalent LaTeX \sectionbreak : \clearpage puis verso blanc si besoin.
     pagebreak()
     if calc.even(counter(page).get().first()) {
       set page(header: [])
@@ -29,32 +41,41 @@
   }
 }
 
-#let run-section-title = state("garamond-b5-section-mark", none)
+#let run-section-title = state("french-dora6-section-mark", none)
 
 #let default-config = (
   ..book-options-defaults,
-  page-width: 143.5mm,
-  page-height: 210mm,
-  margin-x: 18mm,
-  margin-top: 24mm,
-  margin-bottom: 22mm,
-  font-family: "Garamond Premier Pro",
-  font-size: 9pt,
+  page-width: 91.77mm,
+  page-height: 148.5mm,
+  margin-x: 12mm,
+  margin-top: 20mm,
+  margin-bottom: 12mm,
+  font-family: body-font,
+  font-size: 8.1pt,
   line-spacing: 1.2em,
   auto-break-long-tokens: true,
   auto-break-chunk-size: 24,
   section-title-pad-top: 2cm,
   title: "Titre",
+  subtitle: "",
   author: "Auteur",
   edition: "Edition",
   cover-image: none,
   cover-page: false,
   half-title-page: false,
-  title-page: false,
+  title-page: true,
   front-title-recto-with-blank-before: false,
-  section-title-recto-with-blank-before: false,
+  section-title-recto-with-blank-before: true,
+  hide-page-number-on-section-title: true,
   show-page-numbers: true,
   section-new-page: false,
+  chapter-start-odd: true,
+  chapter-title-in-header: true,
+  page-number-placement: "outer",
+  header-footer-rule: "none",
+  heading-numbering: "none",
+  h1-typography: "centered",
+  section-order: ("titleCredits", "body"),
   toc-at-start: false,
   toc-at-end: false,
 )
@@ -66,41 +87,48 @@
   else { conf.line-spacing }
 }
 
-#let _front_half_title(conf) = {
-  if conf.front-title-recto-with-blank-before {
-    let p = counter(page).get().first()
-    if calc.odd(p) {
-      { set page(header: []); pagebreak(); pagebreak() }
-    } else {
-      { set page(header: []); pagebreak(); pagebreak(); pagebreak() }
-    }
+#let _title-line(conf) = {
+  let sub = conf.at("subtitle", default: "")
+  if sub != "" {
+    text(font: title-font, size: 12pt)[#sub#conf.title]
   } else {
+    text(font: title-font, size: 12pt, conf.title)
+  }
+}
+
+#let _front-matter-page() = {
+  set page(header: [])
+}
+
+// Calé sur LaTeX \sectionbreak : page impaire (recto), verso blanc si besoin.
+#let _ensure-recto-with-blank-before() = {
+  _front-matter-page()
+  pagebreak()
+  if calc.even(counter(page).get().first()) {
+    _front-matter-page()
     pagebreak()
   }
-  align(center + horizon, text(size: 1.6em, conf.title))
+}
+
+#let _front_half_title(conf) = {
+  if conf.front-title-recto-with-blank-before {
+    _ensure-recto-with-blank-before()
+  }
+  _front-matter-page()
+  align(center + horizon, _title-line(conf))
   pagebreak()
 }
 
 #let _front_title_page(conf) = {
   if conf.front-title-recto-with-blank-before {
-    let p = counter(page).get().first()
-    if calc.odd(p) {
-      { set page(header: []); pagebreak(); pagebreak() }
-    } else {
-      { set page(header: []); pagebreak(); pagebreak(); pagebreak() }
-    }
-  } else {
-    pagebreak()
+    _ensure-recto-with-blank-before()
   }
-  align(center + horizon, [
-    #text(size: 1.6em, conf.title)
-    #v(8mm)
-    #if conf.cover-image != none [
-      #image(conf.cover-image, width: 60%)
-      #v(8mm)
-    ]
-    #conf.author
-  ])
+  _front-matter-page()
+  box(width: 100%, height: 100%)[
+    #align(center)[#_title-line(conf)]
+    #v(1fr)
+    #align(center)[#conf.author]
+  ]
   pagebreak()
 }
 
@@ -109,7 +137,7 @@
   if d == "1" { 1 } else if d == "2" { 2 } else { 3 }
 }
 
-#let _emit_outline(conf) = {
+#let _emit-outline(conf) = {
   let depth = _toc-depth-num(conf)
   if conf.label-toc != "" {
     outline(title: [#conf.label-toc], depth: depth)
@@ -134,20 +162,18 @@
     []
   } else {
     let odd = calc.odd(p)
-    let pg = text(size: 10pt, counter(page).display(conf.page-numbering-pattern))
+    let pg = text(font: header-font, size: 10pt, counter(page).display(conf.page-numbering-pattern))
     let run = run-section-title.get()
     let show-run = conf.chapter-title-in-header and run != none
-    let run-cell = if show-run { run } else { [] }
-    let rule = if conf.header-footer-rule == "thin" {
-      line(length: 100%, stroke: 0.35pt + rgb(conf.accent-color))
-    } else if conf.header-footer-rule == "thick" {
-      line(length: 100%, stroke: 0.75pt + rgb(conf.accent-color))
+    let run-cell = if show-run {
+      text(font: header-font, size: 5.02pt, run)
     } else {
       []
     }
     let inner = if conf.page-number-placement == "center" {
       align(center)[#pg]
     } else if conf.page-number-placement == "outer" {
+      // Extérieur (reliure à gauche) : recto → droite, verso → gauche
       grid(
         columns: (1fr, 1fr),
         column-gutter: 0.75em,
@@ -155,6 +181,7 @@
         if odd { align(right)[#pg] } else { align(right)[#run-cell] },
       )
     } else {
+      // Intérieur (spread) : recto → gauche, verso → droite
       grid(
         columns: (1fr, 1fr),
         column-gutter: 0.75em,
@@ -162,30 +189,14 @@
         if odd { align(right)[#run-cell] } else { align(right)[#pg] },
       )
     }
-    block(below: 0.35em, width: 100%)[
-      #inner
-      #if conf.header-footer-rule != "none" [
-        #v(0.25em)
-        #rule
-      ]
-    ]
-  }
-}
-
-#let _h1-align(conf, inner) = {
-  if conf.h1-typography == "left" {
-    align(left, inner)
-  } else if conf.h1-typography == "centered" {
-    align(center, inner)
-  } else {
-    align(center, inner)
+    block(below: 0.35em, width: 100%)[#inner]
   }
 }
 
 #let _cover-block(conf) = {
   pagebreak()
   align(center + horizon, [
-    #text(size: 1.8em, fill: rgb(conf.accent-color), conf.title)
+    #text(font: title-font, size: 14pt, conf.title)
     #v(10mm)
     #conf.author
     #v(4mm)
@@ -198,8 +209,15 @@
   pagebreak()
   heading(level: 1, title-text)
   parbreak()
-  text(style: "italic")[Bloc généré par le gabarit — branchez votre contenu ou votre collecte Typst ici.]
+  text(font: body-font, style: "italic")[Bloc généré par le gabarit — branchez votre contenu ou votre collecte Typst ici.]
   pagebreak()
+}
+
+// Titres de fin de livre : pas de \sectionbreak ni padding chapitre (évite pages blanches).
+#let _back-matter-title(title-text) = {
+  block(above: 0.5em, below: 1em)[
+    #align(center, text(font: title-font, size: 12pt, title-text))
+  ]
 }
 
 #let emit-section(conf, sid, body) = {
@@ -212,8 +230,9 @@
     if conf.title-page {
       _front_title_page(conf)
     }
+    set page(header: _header-inner(conf))
   } else if sid == "toc" and conf.toc-position != "none" {
-    _emit_outline(conf)
+    _emit-outline(conf)
     pagebreak()
   } else if sid == "body" {
     body
@@ -223,36 +242,31 @@
     _placeholder-page(if conf.label-list-figures != "" { conf.label-list-figures } else { "Figures" })
   } else if sid == "bibliography" and conf.bibliography-position != "none" {
     pagebreak()
-    heading(level: 1, if conf.label-bibliography != "" { conf.label-bibliography } else { "Bibliographie" })
-    parbreak()
+    _back-matter-title(if conf.label-bibliography != "" { conf.label-bibliography } else { "Bibliographie" })
     include("/obb-generated-bibliography.typ")
-    pagebreak()
   } else if sid == "indexGlossary" and (conf.show-index or conf.show-glossary) {
     if conf.show-index {
       pagebreak()
-      heading(level: 1, if conf.label-index != "" { conf.label-index } else { "Index des noms" })
-      parbreak()
+      _back-matter-title(if conf.label-index != "" { conf.label-index } else { "Index des noms" })
       include("/obb-generated-name-index.typ")
-      pagebreak()
     }
     if conf.show-glossary {
       pagebreak()
-      heading(level: 1, if conf.label-glossary != "" { conf.label-glossary } else { "Glossaire" })
-      parbreak()
+      _back-matter-title(if conf.label-glossary != "" { conf.label-glossary } else { "Glossaire" })
       include("/obb-generated-glossary.typ")
-      pagebreak()
     }
   } else if sid == "backCover" and conf.show-back-cover {
     pagebreak()
     align(center + horizon)[
-      #text(style: "italic")[Quatrième de couverture]
+      #text(font: body-font, style: "italic")[Quatrième de couverture]
     ]
     pagebreak()
   }
 }
 
 #let apply-layout(conf, body) = {
-  show footnote: set super(size: 0.58em)
+  // Marqueur footnote : IM Fell — exposants typographiques trop petits ; métriques explicites.
+  show footnote: set super(size: 0.68em, baseline: -0.58em, typographic: false)
   show footnote.entry: it => block(breakable: false)[#it]
 
   set page(
@@ -261,13 +275,12 @@
     binding: left,
     margin: _page-margins(conf),
     header: _header-inner(conf),
+    header-ascent: 13.6pt,
+    footer-descent: 13pt,
     numbering: none,
   )
 
   let body-align = conf.at("body-text-alignment", default: "justify")
-  // Comparaisons explicites (fiables sur toutes les versions WASM) : la justification
-  // contrôle les lignes complètes ; l’alignement courant règle surtout la dernière ligne
-  // (voir doc Typst `par.justify` + alignement courant).
   let body-justify = (
     body-align == "justify"
       or body-align == "justify-last-left"
@@ -279,6 +292,8 @@
     lang: conf.document-lang,
     hyphenate: if body-justify { auto } else { false },
   )
+  apply-dora-text-styles()
+
   if body-align == "center" {
     set align(center)
   } else if body-align == "right" {
@@ -292,7 +307,6 @@
   } else {
     set align(start)
   }
-  // Règle Typst officielle « show-set » : s’applique à chaque élément `par` (corps Pandoc inclus).
   show par: set par(
     leading: _line-leading(conf),
     justify: body-justify,
@@ -309,25 +323,27 @@
     set heading(numbering: conf.heading-numbering)
   }
 
+  show figure: set align(center)
+  show figure.where(kind: image): it => {
+    block(width: 100%, breakable: false, align(center)[#it])
+  }
+  show image: it => {
+    block(width: 100%, breakable: false, align(center)[
+      #box(width: 100%, it)
+    ])
+  }
+
   show heading.where(level: 1): it => {
     run-section-title.update(it.body)
     _section-open-page(conf)
     v(conf.section-title-pad-top)
-    let h1-inner = if conf.h1-typography == "uppercase" {
-      text(size: 1.35em, fill: rgb(conf.accent-color), weight: "bold", tracking: 0.06em, it.body)
-    } else if conf.h1-typography == "normal" {
-      text(size: 1.35em, fill: rgb(conf.accent-color), weight: "regular", it.body)
-    } else {
-      text(size: 1.35em, fill: rgb(conf.accent-color), it.body)
-    }
-    _h1-align(conf, h1-inner)
+    align(center, text(font: title-font, size: 12pt, it.body))
     v(2em)
   }
 
   show heading.where(level: 2): it => {
     block(above: 0.8em, below: 0.4em, {
-      set text(weight: "bold", fill: rgb(conf.accent-color))
-      it
+      emph(it.body)
     })
   }
 
@@ -342,16 +358,17 @@
 
 #let conf = (
   ..default-config,
-  font-family: "Garamond Premier Pro",
-  font-size: 9pt,
-  page-width: 143.5mm,
-  page-height: 210mm,
-  margin-x: 18mm,
-  margin-top: 24mm,
-  margin-bottom: 22mm,
-  section-new-page: false,
-  toc-at-start: false,
-  toc-at-end: false,
+  font-family: body-font,
+  font-size: 8.1pt,
+  page-width: 91.77mm,
+  page-height: 148.5mm,
+  margin-x: 12mm,
+  margin-top: 20mm,
+  margin-bottom: 12mm,
+  title-page: true,
+  chapter-start-odd: true,
+  section-title-recto-with-blank-before: true,
+  section-order: ("titleCredits", "body"),
 )
 
 #let render(opts) = {

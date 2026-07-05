@@ -34,4 +34,20 @@ foreach ($f in $files) {
     Copy-Item -Force $src (Join-Path $DestDir $f)
 }
 
+$TypesetSrc = Join-Path $RepoRoot "typeset"
+if (Test-Path $TypesetSrc) {
+    $TypesetDest = Join-Path $DestDir "typeset"
+    Write-Host "Fusion typeset/ -> $TypesetDest (sans supprimer les gabarits locaux absents du depot)" -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force -Path $TypesetDest | Out-Null
+    Get-ChildItem -Path $TypesetSrc -Recurse -File | ForEach-Object {
+        $rel = $_.FullName.Substring($TypesetSrc.Length + 1)
+        $destFile = Join-Path $TypesetDest $rel
+        $destDir = Split-Path $destFile -Parent
+        New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+        Copy-Item -Path $_.FullName -Destination $destFile -Force
+    }
+} else {
+    Write-Warning "Dossier typeset introuvable : $TypesetSrc (gabarits non deployes)"
+}
+
 Write-Host "OK - plugin deploye : $DestDir" -ForegroundColor Green
