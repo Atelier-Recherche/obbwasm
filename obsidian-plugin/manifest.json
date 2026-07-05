@@ -1,10 +1,11 @@
 {
 	"id": "obbwasm-book",
 	"name": "OBB WASM Book",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"minAppVersion": "1.5.0",
 	"description": "Composition livre Markdown → PDF (Pandoc + Typst WASM), gabarits téléchargeables.",
-	"author": "obbwasm",
+	"author": "l'Atelier",
+	"authorUrl": "https://atelier.atechnologie.fr/activites/programmation-doutils/",
 	"isDesktopOnly": false,
 	"main": "main.js"
 }
