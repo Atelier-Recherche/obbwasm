@@ -131,6 +131,15 @@ function Get-PluginRepoRelativePath {
     return "$($PluginSubdir.TrimEnd('/\'))/$FileName"
 }
 
+function Sync-CatalogRootManifest {
+    if ($PluginSubdir -eq '.' -or [string]::IsNullOrWhiteSpace($PluginSubdir)) {
+        return
+    }
+    foreach ($name in @('manifest.json', 'versions.json')) {
+        Copy-Item -LiteralPath (Join-Path $pluginDir $name) -Destination (Join-Path $repoRoot $name) -Force
+    }
+}
+
 $repoRoot = $PSScriptRoot
 $pluginDir = if ($PluginSubdir -eq '.' -or [string]::IsNullOrWhiteSpace($PluginSubdir)) {
     $repoRoot
@@ -250,6 +259,8 @@ if ($LASTEXITCODE -eq 0) {
     throw "Le tag Git '$newVersion' existe déjà."
 }
 
+Sync-CatalogRootManifest
+
 $pathsToAdd = @(
     (Get-PluginRepoRelativePath 'package.json'),
     (Get-PluginRepoRelativePath 'manifest.json'),
@@ -259,6 +270,9 @@ $pathsToAdd = @(
     (Get-PluginRepoRelativePath 'pdf.worker.min.mjs'),
     $ReleaseNotesFile
 )
+if ($PluginSubdir -ne '.' -and -not [string]::IsNullOrWhiteSpace($PluginSubdir)) {
+    $pathsToAdd += 'manifest.json', 'versions.json'
+}
 & git add -- $pathsToAdd
 if ($LASTEXITCODE -ne 0) { throw "git add a échoué (code $LASTEXITCODE)." }
 
