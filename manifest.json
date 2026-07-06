@@ -1,7 +1,7 @@
 {
 	"id": "obbwasm-book",
 	"name": "OBB WASM Book",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"minAppVersion": "1.5.0",
 	"description": "Composition livre Markdown → PDF (Pandoc + Typst WASM), gabarits téléchargeables.",
 	"author": "l'Atelier",

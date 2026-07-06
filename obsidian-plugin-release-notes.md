@@ -1,4 +1,4 @@
-# OBB WASM Book 0.1.2
+# OBB WASM Book 0.1.3
 
-62ff40d Obsidian store compliance, LICENSE, and plugin manifest updates
-6f830cb release(plugin): 0.1.2
+341cfdd fix: update repository links in README files and bump plugin version to 0.1.2
+eaf0356 fix(catalog): manifest.json et versions.json a la racine pour le catalogue Obsidian
