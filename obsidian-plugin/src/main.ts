@@ -1,7 +1,6 @@
 import {
   BOOK_PRESETS_RELATIVE_DIR,
-  buildImpositionTyp,
-  parseImpositionMeta,
+  buildImpositionMainTyp,
   chunkArray,
   compileTypstBookToPdf,
   yieldToMainThread,
@@ -10,12 +9,10 @@ import {
   defaultBookLayoutState,
   firstDiagnosticMessage,
   mountTypstPackagesFromLoader,
-  mountTypstFontShadows,
   overrideTypstLet,
   pandocMarkdownToTypst,
   markdownHorizontalRuleFromBookValues,
   normalizeWikiImagesForPandoc,
-  detectUnprocessedPandocCitations,
   resolveRemoteImageFetchUrl,
   normalizeBookCompileMeta,
   normalizeVaultCompilePaths,
@@ -49,7 +46,6 @@ import {
   type App,
   type FileSystemAdapter,
   type TFile,
-  type TFolder,
 } from "obsidian";
 import { mountBookLayoutPresetsPanel, type PresetLoadDetail, type StoredBookPreset } from "./bookLayoutPresetsPanel.js";
 import { mountBookOptionsPanel, mountSectionOrderPanel } from "./bookOptionsPanel.js";
@@ -363,30 +359,9 @@ export default class ObbWasmBookPlugin extends Plugin {
   getDefaultTemplatesRoot(): string {
     try {
       const path = nodePath();
-      const fs = nodeFs();
-      const plugin = this.pluginDir();
-      if (fs?.existsSync(path.join(plugin, "typeset"))) {
-        return plugin;
-      }
-      return path.join(plugin, "bundle");
+      return path.join(this.pluginDir(), "bundle");
     } catch {
       return "";
-    }
-  }
-
-  /** Si `typeset/` est à la racine du plugin (déploiement local), corrige l’ancienne racine `bundle/`. */
-  migrateTemplatesRootIfNeeded(): void {
-    const fs = nodeFs();
-    const path = nodePath();
-    if (!fs) return;
-    const plugin = this.pluginDir();
-    const flatTypeset = path.join(plugin, "typeset");
-    if (!fs.existsSync(flatTypeset)) return;
-    const cur = this.settings.templatesRoot.trim();
-    const bundleRoot = path.join(plugin, "bundle");
-    if (!cur || path.normalize(cur) === path.normalize(bundleRoot)) {
-      this.settings.templatesRoot = plugin;
-      this.typstCompiler = null;
     }
   }
 
@@ -423,7 +398,6 @@ export default class ObbWasmBookPlugin extends Plugin {
       if (!this.settings.templatesRoot) {
         this.settings.templatesRoot = this.getDefaultTemplatesRoot();
       }
-      this.migrateTemplatesRootIfNeeded();
     } catch {
       /* Obsidian mobile / sandbox : pas de require('fs'). */
     }
@@ -774,18 +748,7 @@ export default class ObbWasmBookPlugin extends Plugin {
     const PANDOC_CSL = "obb-style.csl";
     let bibliography: { name: string; blob: Blob } | null = null;
     let csl: { name: string; blob: Blob } | null = null;
-    let bibPath = this.settings.bibliographyVaultPath?.trim() ?? "";
-    let cslPath = this.settings.cslVaultPath?.trim() ?? "";
-
-    if (!bibPath && cslPath) {
-      const sibling = this.findVaultSiblingFile(cslPath, "bib");
-      if (sibling) bibPath = sibling;
-    }
-    if (bibPath && !cslPath) {
-      const sibling = this.findVaultSiblingFile(bibPath, "csl");
-      if (sibling) cslPath = sibling;
-    }
-
+    const bibPath = this.settings.bibliographyVaultPath?.trim();
     if (bibPath) {
       const norm = normalizePath(bibPath);
       const af = this.app.vault.getAbstractFileByPath(norm);
@@ -802,6 +765,7 @@ export default class ObbWasmBookPlugin extends Plugin {
       }
     }
     if (bibliography) {
+      const cslPath = this.settings.cslVaultPath?.trim();
       if (cslPath) {
         const norm = normalizePath(cslPath);
         const af = this.app.vault.getAbstractFileByPath(norm);
@@ -819,24 +783,6 @@ export default class ObbWasmBookPlugin extends Plugin {
       }
     }
     return { bibliography, csl };
-  }
-
-  /** Cherche un fichier `.ext` dans le dossier parent de `vaultFilePath`. */
-  private findVaultSiblingFile(vaultFilePath: string, ext: string): string | null {
-    const norm = normalizePath(vaultFilePath);
-    const parts = norm.split("/");
-    parts.pop();
-    const dir = parts.join("/");
-    if (!dir) return null;
-    const folder = this.app.vault.getAbstractFileByPath(dir);
-    if (!folder || !("children" in folder)) return null;
-    const want = ext.toLowerCase();
-    for (const child of (folder as TFolder).children) {
-      if ("extension" in child && (child as TFile).extension.toLowerCase() === want) {
-        return (child as TFile).path;
-      }
-    }
-    return null;
   }
 
   /** Applique chemins coffre + métadonnées livre issus d’un préréglage (plugin). */
@@ -1047,12 +993,6 @@ export default class ObbWasmBookPlugin extends Plugin {
       markdownHorizontalRule: markdownHorizontalRuleFromBookValues(bookLayout.values),
     });
     await yieldToMainThread();
-    if (detectUnprocessedPandocCitations(typst)) {
-      new Notice(
-        "Citations non formatées : renseignez le fichier .bib dans Paramètres → Citations (le .csl seul ne suffit pas).",
-        8000,
-      );
-    }
     mediaDebugLog?.push(`[pandoc] stderr (${stderr.length} car.) : ${stderr.slice(0, 600)}`);
     mediaDebugLog?.push(`[pandoc] mediaFiles (${Object.keys(mediaFiles).length}) : ${Object.keys(mediaFiles).join(", ") || "(vide)"}`);
     mediaDebugLog?.push(`[typst brut] ${typst.match(/image\s*\(/g)?.length ?? 0} appel(s) image(`);
@@ -1149,7 +1089,6 @@ export default class ObbWasmBookPlugin extends Plugin {
     compiler.reset();
     compiler.resetShadow();
     await mountTypstPackagesFromLoader(compiler, loader);
-    await mountTypstFontShadows(compiler, loader);
     compiler.addSource("/main.typ", source);
 
     const compiled = await compiler.runWithWorld(
@@ -1200,40 +1139,8 @@ export default class ObbWasmBookPlugin extends Plugin {
     compiler.mapShadow("export.pdf", bytes);
 
     const compensationMm = Number((-11 * this.settings.impositionPaperThicknessMm).toFixed(2));
-    const templateSource = (await loader.fetchTextFile(pathSel)) ?? "";
-    if (!templateSource.trim()) {
-      throw new Error(
-        `Gabarit imposition introuvable : ${pathSel}\nRacine gabarits : ${this.resolveTemplatesRoot()}`,
-      );
-    }
-    const layout = parseImpositionMeta(templateSource);
-    if (!layout && /imposition-mode:\s*signature-grid/i.test(templateSource)) {
-      throw new Error("Meta @obbwasm-meta illisible dans le gabarit d’imposition.");
-    }
-    const mainSource = buildImpositionTyp({
-      layout,
-      kind: spec.kind,
-      packetSize: spec.packetSize,
-      packets,
-      compensationMm,
-    });
-    if (layout?.mode === "signature-grid") {
-      const perFace = layout.gridCols * layout.gridRows;
-      new Notice(
-        `Imposition cahier ${layout.packetSize} pages — ${perFace} pages par face (${layout.sheetWidth} × ${layout.sheetHeight})`,
-      );
-    }
+    const mainSource = buildImpositionMainTyp(spec.kind, spec.packetSize, packets, compensationMm);
     compiler.addSource("/main.typ", mainSource);
-
-    const fs = nodeFs();
-    const path = nodePath();
-    if (fs && path) {
-      try {
-        fs.writeFileSync(path.join(this.getDataDir(), "imposition-main.typ"), mainSource, "utf8");
-      } catch {
-        /* ignore */
-      }
-    }
 
     const compiled = await compiler.runWithWorld(
       { root: "/", mainFilePath: "/main.typ", inputs: {} },
@@ -1241,16 +1148,6 @@ export default class ObbWasmBookPlugin extends Plugin {
     );
     if (!compiled?.result) {
       const hint = firstDiagnosticMessage(compiled);
-      const fs = nodeFs();
-      const path = nodePath();
-      if (fs && path) {
-        try {
-          const debugDir = this.getDataDir();
-          fs.writeFileSync(path.join(debugDir, "imposition-main.typ"), mainSource, "utf8");
-        } catch {
-          /* ignore */
-        }
-      }
       throw new Error(hint || "Imposition sans PDF.");
     }
     return Uint8Array.from(compiled.result);
@@ -1543,7 +1440,7 @@ class ObbBookView extends ItemView {
     container.addClass("obbwasm-view");
     const scroll = container.createDiv({ cls: "obbwasm-view-scroll" });
 
-    scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Métadonnées" });
+    scroll.createEl("div", { cls: "obbwasm-section-title", text: "Métadonnées" });
     const meta = scroll.createDiv({ cls: "obbwasm-section" });
     const t = this.labeledText(meta, "Titre");
     const a = this.labeledText(meta, "Auteur");
@@ -1553,7 +1450,7 @@ class ObbBookView extends ItemView {
     this.bindMeta(a, "author");
     this.bindMeta(p, "publisher");
 
-    scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Citations (Pandoc)" });
+    scroll.createEl("div", { cls: "obbwasm-section-title", text: "Citations (Pandoc)" });
     const citeSec = scroll.createDiv({ cls: "obbwasm-section" });
     citeSec.createEl("p", {
       cls: "obbwasm-help-text",
@@ -1598,7 +1495,7 @@ class ObbBookView extends ItemView {
       nameIndex: nameIndexPathInput,
     };
 
-    scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Mise en page livre" });
+    scroll.createEl("div", { cls: "obbwasm-section-title", text: "Mise en page livre" });
     const layoutSec = scroll.createDiv({ cls: "obbwasm-section" });
     const gramRow = layoutSec.createDiv({ cls: "obbwasm-field-row" });
     gramRow.createSpan({ cls: "obbwasm-field-label", text: "Grammage papier (dos)" });
@@ -1664,7 +1561,7 @@ class ObbBookView extends ItemView {
     });
     await this.rebuildBookOptionsUI();
 
-    scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Intérieur" });
+    scroll.createEl("div", { cls: "obbwasm-section-title", text: "Intérieur" });
     const intSec = scroll.createDiv({ cls: "obbwasm-section" });
     const intActions = intSec.createDiv({ cls: "obbwasm-actions-row" });
     intActions.createEl("button", { text: "Compiler la note active → PDF" }, (b) => {
@@ -1674,7 +1571,7 @@ class ObbBookView extends ItemView {
     });
     this.mountCompileStatusRow(intSec);
 
-    scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Couverture" });
+    scroll.createEl("div", { cls: "obbwasm-section-title", text: "Couverture" });
     const covSec = scroll.createDiv({ cls: "obbwasm-section" });
     const covRow = covSec.createDiv({ cls: "obbwasm-field-row" });
     covRow.createSpan({ cls: "obbwasm-field-label", text: "Gabarit .typ" });
@@ -1719,7 +1616,7 @@ class ObbBookView extends ItemView {
       b.addEventListener("click", () => void this.runCover());
     });
 
-    scroll.createEl("h3", { cls: "obbwasm-section-title", text: "Imposition" });
+    scroll.createEl("div", { cls: "obbwasm-section-title", text: "Imposition" });
     const impSec = scroll.createDiv({ cls: "obbwasm-section" });
     impSec.createEl("p", {
       cls: "obbwasm-help-text",
@@ -1917,7 +1814,7 @@ class ObbWasmSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     this.plugin.hydrateManifestFromDisk();
-    containerEl.createEl("h2", { text: "OBB WASM Book" });
+    new Setting(containerEl).setName("OBB WASM Book").setHeading();
 
     new Setting(containerEl)
       .setName("Typst compiler wasm")

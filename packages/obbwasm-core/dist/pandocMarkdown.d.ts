@@ -15,8 +15,6 @@ export declare function normalizeWikiImagesForPandoc(markdown: string): string;
  * La forme canonique Pandoc est `[@clef, 44]` ou `[@clef, p. 44]` (virgule après la clé).
  */
 export declare function normalizePandocCitationPageShorthand(markdown: string): string;
-/** Pandoc sans citeproc laisse des clés brutes (@clef) dans le Typst émis. */
-export declare function detectUnprocessedPandocCitations(typst: string): boolean;
 /** Rendu Typst pour une ligne `---` / `***` / `___` (séparateur horizontal Markdown). */
 export type MarkdownHorizontalRuleTypst = "line" | "pagebreak";
 /** Lit l’option livre « Séparateur Markdown » (registre : `markdown-horizontal-rule`). */

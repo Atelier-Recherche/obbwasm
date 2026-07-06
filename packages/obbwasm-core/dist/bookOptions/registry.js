@@ -191,12 +191,6 @@ export const BOOK_OPTIONS = [
         labelKey: "sectionNewPage",
     },
     {
-        id: "hide-page-number-on-section-title",
-        kind: "bool",
-        typstKey: "hide-page-number-on-section-title",
-        labelKey: "hidePageNumberOnSectionTitle",
-    },
-    {
         id: "section-title-recto-with-blank-before",
         kind: "bool",
         typstKey: "section-title-recto-with-blank-before",

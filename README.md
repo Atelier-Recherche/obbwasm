@@ -22,7 +22,7 @@
 
 <p>
 <a href="https://atelier.atechnologie.fr/"><img src="https://img.shields.io/badge/🌐_l'Atelier-atelier.atechnologie.fr-2d5016?style=for-the-badge" alt="Site l'Atelier" /></a>
-<a href="https://github.com/Morglaf/obbwasm"><img src="https://img.shields.io/badge/📦_Dépôt-GitHub-181717?style=for-the-badge&logo=github" alt="Dépôt GitHub" /></a>
+<a href="https://github.com/Atelier-Recherche/obbwasm"><img src="https://img.shields.io/badge/📦_Dépôt-GitHub-181717?style=for-the-badge&logo=github" alt="Dépôt GitHub" /></a>
 <a href="https://obsidian.md/plugins?search=BRAT#"><img src="https://img.shields.io/badge/⬇️_Plugin_Obsidian-BRAT-7c3aed?style=for-the-badge&logo=obsidian&logoColor=white" alt="Installer le plugin via BRAT" /></a>
 </p>
 
@@ -61,7 +61,7 @@ Aucune installation locale de Pandoc ou Typst n’est requise pour le flux princ
 
 1. 🔌 Installer **BRAT** : [Obsidian — BRAT](https://obsidian.md/plugins?search=BRAT#)
 2. ➕ Ajouter ce dépôt avec l’option *« Add Beta plugin »* :  
-   `https://github.com/Morglaf/obbwasm`  
+   `https://github.com/Atelier-Recherche/obbwasm`  
    (dossier plugin : `obsidian-plugin/` — voir le workflow de release pour les assets `main.js`, `manifest.json`, `styles.css`, WASM)
 
 3. 📥 Télécharger les **gabarits Typst** depuis les réglages du plugin (ou pointer vers un dossier `typeset/` local).
@@ -177,7 +177,7 @@ Déploiement gabarits + site : voir `deploy.ps1` à la racine.
 | | |
 | --- | --- |
 | 🌐 **l'Atelier** | [atelier.atechnologie.fr](https://atelier.atechnologie.fr/) |
-| 📦 **Dépôt** | [github.com/Morglaf/obbwasm](https://github.com/Morglaf/obbwasm) |
+| 📦 **Dépôt** | [github.com/Atelier-Recherche/obbwasm](https://github.com/Atelier-Recherche/obbwasm) |
 | 📄 **Pandoc** | [pandoc.org](https://pandoc.org/) |
 | 📐 **Typst** | [typst.app](https://typst.app/) |
 | 🔌 **Obsidian** | [obsidian.md](https://obsidian.md/) |

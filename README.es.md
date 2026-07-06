@@ -22,7 +22,7 @@
 
 <p>
 <a href="https://atelier.atechnologie.fr/"><img src="https://img.shields.io/badge/🌐_l'Atelier-atelier.atechnologie.fr-2d5016?style=for-the-badge" alt="Sitio l'Atelier" /></a>
-<a href="https://github.com/Morglaf/obbwasm"><img src="https://img.shields.io/badge/📦_Repositorio-GitHub-181717?style=for-the-badge&logo=github" alt="Repositorio GitHub" /></a>
+<a href="https://github.com/Atelier-Recherche/obbwasm"><img src="https://img.shields.io/badge/📦_Repositorio-GitHub-181717?style=for-the-badge&logo=github" alt="Repositorio GitHub" /></a>
 <a href="https://obsidian.md/plugins?search=BRAT#"><img src="https://img.shields.io/badge/⬇️_Plugin_Obsidian-BRAT-7c3aed?style=for-the-badge&logo=obsidian&logoColor=white" alt="Instalar plugin vía BRAT" /></a>
 </p>
 
@@ -61,7 +61,7 @@ No se requiere instalar Pandoc ni Typst localmente para el flujo principal.
 
 1. 🔌 Instalar **BRAT**: [Obsidian — BRAT](https://obsidian.md/plugins?search=BRAT#)
 2. ➕ Añadir este repositorio con *« Add Beta plugin »*:  
-   `https://github.com/Morglaf/obbwasm`  
+   `https://github.com/Atelier-Recherche/obbwasm`  
    (carpeta del plugin: `obsidian-plugin/` — ver el workflow de release para `main.js`, `manifest.json`, `styles.css`, WASM)
 
 3. 📥 Descargar las **plantillas Typst** desde los ajustes del plugin (o apuntar a una carpeta `typeset/` local).
@@ -164,7 +164,7 @@ Plantillas + sitio: ver `deploy.ps1` en la raíz del repositorio.
 | | |
 | --- | --- |
 | 🌐 **l'Atelier** | [atelier.atechnologie.fr](https://atelier.atechnologie.fr/) |
-| 📦 **Repositorio** | [github.com/Morglaf/obbwasm](https://github.com/Morglaf/obbwasm) |
+| 📦 **Repositorio** | [github.com/Atelier-Recherche/obbwasm](https://github.com/Atelier-Recherche/obbwasm) |
 | 📄 **Pandoc** | [pandoc.org](https://pandoc.org/) |
 | 📐 **Typst** | [typst.app](https://typst.app/) |
 | 🔌 **Obsidian** | [obsidian.md](https://obsidian.md/) |

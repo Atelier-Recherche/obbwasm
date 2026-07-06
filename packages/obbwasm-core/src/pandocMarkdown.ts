@@ -3,7 +3,6 @@ import { buildTypstOptsLines } from "./bookOptions/typstSerialize.js";
 import { resolveDocStrings } from "./bookOptions/docStrings.js";
 import { BOOK_OPTIONS_DEFAULTS_PATH, type ObbWasmAssetLoader } from "./assetLoader.js";
 import { mountTypstPackagesFromLoader } from "./typstPackages.js";
-import { mountTypstFontShadows } from "./typstFontShadow.js";
 import { virtualizeTypstMediaPaths } from "./typstVirtualMedia.js";
 import { splitPandocTypstBodyAndBibliography } from "./pandocTypstBibliography.js";
 import { withAsyncTimeout, yieldToMainThread } from "./asyncYield.js";
@@ -55,11 +54,6 @@ export function normalizePandocCitationPageShorthand(markdown: string): string {
   s = s.replace(/\[@([^\s\],]+)\s*,\s*p(\d+)\]/g, "[@$1, $2]");
   s = s.replace(/\[@([^\s\],]+)\s+p(\d+)\]/g, "[@$1, $2]");
   return s;
-}
-
-/** Pandoc sans citeproc laisse des clés brutes (@clef) dans le Typst émis. */
-export function detectUnprocessedPandocCitations(typst: string): boolean {
-  return /\s@[A-Za-z][\w:-]*(?:[.,;:!?)}\]]|\s|$)/.test(typst);
 }
 
 /** Rendu Typst pour une ligne `---` / `***` / `___` (séparateur horizontal Markdown). */
@@ -116,9 +110,7 @@ export async function pandocMarkdownToTypst(params: {
   } = params;
   const from =
     sourceFormat === "md"
-      ? bibliography
-        ? "markdown+footnotes+citations"
-        : "markdown+footnotes"
+      ? "markdown"
       : sourceFormat === "txt"
         ? "plain"
         : sourceFormat;
@@ -173,13 +165,6 @@ export async function pandocMarkdownToTypst(params: {
   let out = patchPandocTypstObbWikiRefs(
     patchPandocTypstMedia(patchPandocTypstFragments(result.stdout || "", markdownHorizontalRule)),
   );
-  let stderr = result.stderr || "";
-  if (bibliography && detectUnprocessedPandocCitations(out)) {
-    stderr += "\n[obbwasm] citeproc : clés @… encore présentes dans le Typst (vérifiez le .bib).";
-  } else if (!bibliography && detectUnprocessedPandocCitations(out)) {
-    stderr +=
-      "\n[obbwasm] Citations non formatées : renseignez le fichier .bib (paramètres plugin → Citations).";
-  }
   out = injectTypstHeadingLabels(out);
   out = patchPandocTypstBrokenLabelRefs(out);
   const mediaFiles: Record<string, Uint8Array> = {};
@@ -203,7 +188,7 @@ export async function pandocMarkdownToTypst(params: {
       mediaFiles,
     };
   }
-  return { typst: out, stderr, mediaFiles };
+  return { typst: out, stderr: result.stderr || "", mediaFiles };
 }
 
 export async function compileTypstBookToPdf(params: {
@@ -267,7 +252,6 @@ export async function compileTypstBookToPdf(params: {
   compiler.resetShadow();
 
   await mountTypstPackagesFromLoader(compiler, loader);
-  await mountTypstFontShadows(compiler, loader);
   for (const [rel, bytes] of Object.entries(mediaFiles ?? {})) {
     const norm = rel.replace(/\\/g, "/").replace(/^\/+/, "");
     if (!norm) continue;

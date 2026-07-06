@@ -87,7 +87,7 @@ $CoreWorkspace = '@obbwasm/core'                     # $null si aucun package pa
 $PluginWorkspace = 'obsidian-plugin'                 # nom du workspace npm (package.json → "name") ; $null = npm run build dans $PluginSubdir
 $ReleaseNotesFile = 'obsidian-plugin-release-notes.md' # doit correspondre à body_path dans le workflow YAML
 $ReleaseNotesTitle = 'OBB WASM Book'                 # titre H1 dans le fichier de notes
-$GhActionsUrl = 'https://github.com/Morglaf/obbwasm/actions' # lien affiché en fin de script ; $null pour ne rien afficher
+$GhActionsUrl = 'https://github.com/Atelier-Recherche/obbwasm/actions' # lien affiché en fin de script ; $null pour ne rien afficher
 # Chemins Git relatifs à la racine du dépôt (préfixe = $PluginSubdir sauf si '.' → pas de préfixe)
 # =============================================================================
 

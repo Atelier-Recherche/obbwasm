@@ -42,7 +42,6 @@ export function defaultBookValues() {
         "title-page": false,
         "front-title-recto-with-blank-before": false,
         "section-new-page": false,
-        "hide-page-number-on-section-title": true,
         "section-title-recto-with-blank-before": false,
         "toc-position": "none",
         "toc-depth": "3",
