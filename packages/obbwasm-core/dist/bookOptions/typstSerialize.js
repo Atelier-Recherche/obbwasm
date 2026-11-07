@@ -60,9 +60,14 @@ export function buildTypstOptsLines(state, resolvedDocStrings, meta) {
     const bibAtStart = bibPos === "start";
     const bibAtEnd = bibPos === "end";
     const lineSpacingPreset = getStr("line-spacing-preset", "standard");
-    const lineSpacingExtra = lineSpacingPreset === "custom"
-        ? [`    line-spacing: ${clampLineSpacingEmString(getStr("line-spacing-em", "1.2"))}em,`]
-        : [];
+    // Toujours émettre `line-spacing` : le gabarit s’en sert pour preset custom (et fallback).
+    const lineSpacingEm = lineSpacingPreset === "custom"
+        ? clampLineSpacingEmString(getStr("line-spacing-em", "1.2"))
+        : lineSpacingPreset === "narrow"
+            ? "1.05"
+            : lineSpacingPreset === "wide"
+                ? "1.35"
+                : "1.2";
     const lines = [
         `    title: ${typstStr(meta.title)},`,
         `    author: ${typstStr(meta.author)},`,
@@ -90,7 +95,7 @@ export function buildTypstOptsLines(state, resolvedDocStrings, meta) {
         `    h1-typography: ${typstStr(getStr("h1-typography", "centered"))},`,
         `    drop-cap-first-para: ${typstBool(getBool("drop-cap-first-para"))},`,
         `    line-spacing-preset: ${typstStr(lineSpacingPreset)},`,
-        ...lineSpacingExtra,
+        `    line-spacing: ${lineSpacingEm}em,`,
         `    body-text-alignment: ${typstStr(getStr("body-text-alignment", "justify"))},`,
         `    chapter-start-odd: ${typstBool(getBool("chapter-start-odd"))},`,
         `    binding-gutter: ${bindMm}mm,`,

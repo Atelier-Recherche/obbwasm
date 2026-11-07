@@ -9,26 +9,15 @@ import { extractMarkdownDataUriImages } from "./markdownDataUriImages.js";
 import { sanitizeTypstCompilerSource } from "./typstHelpers.js";
 import { collectTypstLabelIds, injectTypstHeadingLabels, patchPandocTypstBrokenLabelRefs, patchPandocTypstBrokenLabelRefsAsync, stripNonBookWikiLinks, } from "./pandocTypstLabels.js";
 import { patchPandocTypstMedia, stripBrokenMarkdownMedia } from "./pandocTypstMedia.js";
+import { normalizeInlineFootnotes } from "./markdownFootnotes.js";
+import { hideTypstPaginationTokens, injectMarkdownPaginationAnchors } from "./markdownPagination.js";
+import { normalizePandocCitationPageShorthand, normalizeWikiImagesForPandoc, } from "./markdownNormalize.js";
 import { buildObbBackMatterTypstFragment, normalizeWikiGlossaryIndexLinks, patchPandocTypstObbWikiRefs, } from "./wikiGlossaryIndex.js";
+export { normalizePandocCitationPageShorthand, normalizeWikiImagesForPandoc, } from "./markdownNormalize.js";
 async function toUint8Array(data) {
     if (typeof data === "string")
         return new TextEncoder().encode(data);
     return new Uint8Array(await data.arrayBuffer());
-}
-/** Obsidian `![[fichier]]` → `![](fichier)` pour que Pandoc traite les images locales. */
-export function normalizeWikiImagesForPandoc(markdown) {
-    return markdown.replace(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, (_, path) => `![](${path.trim()})`);
-}
-/**
- * Raccourcis du type `[@clef p44]` (sans virgule) : Pandoc envoie un locator littéral « p44 » à citeproc,
- * qui ajoute déjà le libellé de page du CSL (« p. ») → rendu « p. p44 ». Même problème avec `[@clef, p44]`.
- * La forme canonique Pandoc est `[@clef, 44]` ou `[@clef, p. 44]` (virgule après la clé).
- */
-export function normalizePandocCitationPageShorthand(markdown) {
-    let s = markdown;
-    s = s.replace(/\[@([^\s\],]+)\s*,\s*p(\d+)\]/g, "[@$1, $2]");
-    s = s.replace(/\[@([^\s\],]+)\s+p(\d+)\]/g, "[@$1, $2]");
-    return s;
 }
 /** Lit l’option livre « Séparateur Markdown » (registre : `markdown-horizontal-rule`). */
 export function markdownHorizontalRuleFromBookValues(values) {
@@ -45,7 +34,7 @@ export function patchPandocTypstFragments(typst, mode = "line") {
     return typst.replace(/#horizontalrule\s*\(\s*\)/g, replacement).replace(/#horizontalrule\b/g, replacement);
 }
 export async function pandocMarkdownToTypst(params) {
-    const { convert, sourceFormat = "md", sourceText, sourceBlob, sourceFileName, titleFallback, bibliography, csl, extraFiles, markdownHorizontalRule = "line", } = params;
+    const { convert, sourceFormat = "md", sourceText, sourceBlob, sourceFileName, titleFallback, bibliography, csl, extraFiles, markdownHorizontalRule = "line", paginationAnchors = false, } = params;
     const from = sourceFormat === "md"
         ? "markdown"
         : sourceFormat === "txt"
@@ -57,12 +46,16 @@ export async function pandocMarkdownToTypst(params) {
         const dataUri = extractMarkdownDataUriImages(sourceTextForConvert);
         dataUriFiles = dataUri.files;
         sourceTextForConvert = dataUri.markdown;
+        sourceTextForConvert = normalizeInlineFootnotes(sourceTextForConvert);
         sourceTextForConvert = normalizeWikiImagesForPandoc(sourceTextForConvert);
         sourceTextForConvert = normalizeWikiGlossaryIndexLinks(sourceTextForConvert);
         sourceTextForConvert = stripNonBookWikiLinks(sourceTextForConvert);
         sourceTextForConvert = stripBrokenMarkdownMedia(sourceTextForConvert);
         if (bibliography) {
             sourceTextForConvert = normalizePandocCitationPageShorthand(sourceTextForConvert);
+        }
+        if (paginationAnchors) {
+            sourceTextForConvert = injectMarkdownPaginationAnchors(sourceTextForConvert).markdown;
         }
     }
     // Ne pas passer `extract-media` : pandoc-wasm pré-remplit ce chemin comme *fichier* vide,
@@ -101,6 +94,7 @@ export async function pandocMarkdownToTypst(params) {
     }
     const result = await convert(options, stdin, files);
     let out = patchPandocTypstObbWikiRefs(patchPandocTypstMedia(patchPandocTypstFragments(result.stdout || "", markdownHorizontalRule)));
+    out = hideTypstPaginationTokens(out);
     out = injectTypstHeadingLabels(out);
     out = patchPandocTypstBrokenLabelRefs(out);
     const mediaFiles = {};

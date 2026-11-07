@@ -20,6 +20,7 @@
   ])
 }
 
-#pair(2, 1)
+// Cahier de 4 : recto 4|1, verso 2|3 (à cheval).
+#pair(4, 1)
 #pagebreak()
-#pair(3, 4)
+#pair(2, 3)

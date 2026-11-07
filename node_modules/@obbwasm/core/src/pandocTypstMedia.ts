@@ -55,7 +55,8 @@ export function stripBrokenMarkdownMedia(markdown: string): string {
   s = s.replace(/!\[[^\]]*\]\(\s*\)/g, "");
   s = s.replace(/!\[\[\s*\]\]/g, "");
   s = s.replace(/\[\s*\]\(\s*\)/g, "");
-  s = s.replace(/\[([^\]]+)\]\(\s*\)/g, "$1");
+  // Libellé sans `[` : évite de croiser le `[` d’une note inline `^[voir [x]() …]`.
+  s = s.replace(/\[([^\[\]\n]+)\]\(\s*\)/g, "$1");
   s = s.replace(/<\s*>/g, "");
   return s;
 }

@@ -34,3 +34,32 @@ export async function countPdfPages(bytes: Uint8Array): Promise<number> {
     await pdf.destroy().catch(() => undefined);
   }
 }
+
+/** Textes bruts page par page (jetons OBBPAG pour sync EPUB). */
+export async function extractPdfPageTexts(bytes: Uint8Array): Promise<string[]> {
+  ensurePdfJsWorker();
+  const loadingTask = getDocument({
+    data: bytes.slice(),
+    useSystemFonts: true,
+    disableRange: true,
+    disableStream: true,
+  });
+  const pdf = await loadingTask.promise;
+  try {
+    const texts: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const parts: string[] = [];
+      for (const item of content.items) {
+        if (item && typeof item === "object" && "str" in item) {
+          parts.push(String((item as { str: string }).str));
+        }
+      }
+      texts.push(parts.join(""));
+    }
+    return texts;
+  } finally {
+    await pdf.destroy().catch(() => undefined);
+  }
+}

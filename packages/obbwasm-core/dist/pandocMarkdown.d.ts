@@ -1,5 +1,6 @@
 import type { BookLayoutState } from "./bookOptions/types.js";
 import { type ObbWasmAssetLoader } from "./assetLoader.js";
+export { normalizePandocCitationPageShorthand, normalizeWikiImagesForPandoc, } from "./markdownNormalize.js";
 export type PandocConvertFn = (options: Record<string, unknown>, stdin: string | null, files: Record<string, string | Blob>) => Promise<{
     stdout: string;
     stderr: string;
@@ -7,14 +8,6 @@ export type PandocConvertFn = (options: Record<string, unknown>, stdin: string |
     files: Record<string, string | Blob>;
     mediaFiles: Record<string, string | Blob>;
 }>;
-/** Obsidian `![[fichier]]` → `![](fichier)` pour que Pandoc traite les images locales. */
-export declare function normalizeWikiImagesForPandoc(markdown: string): string;
-/**
- * Raccourcis du type `[@clef p44]` (sans virgule) : Pandoc envoie un locator littéral « p44 » à citeproc,
- * qui ajoute déjà le libellé de page du CSL (« p. ») → rendu « p. p44 ». Même problème avec `[@clef, p44]`.
- * La forme canonique Pandoc est `[@clef, 44]` ou `[@clef, p. 44]` (virgule après la clé).
- */
-export declare function normalizePandocCitationPageShorthand(markdown: string): string;
 /** Rendu Typst pour une ligne `---` / `***` / `___` (séparateur horizontal Markdown). */
 export type MarkdownHorizontalRuleTypst = "line" | "pagebreak";
 /** Lit l’option livre « Séparateur Markdown » (registre : `markdown-horizontal-rule`). */
@@ -45,6 +38,8 @@ export declare function pandocMarkdownToTypst(params: {
     extraFiles?: Record<string, string | Blob>;
     /** Séparateurs `---` dans le Markdown : ligne Typst ou saut de page. */
     markdownHorizontalRule?: MarkdownHorizontalRuleTypst;
+    /** Ancres OBBPAG pour synchroniser les pages PDF avec un export EPUB. */
+    paginationAnchors?: boolean;
 }): Promise<{
     typst: string;
     stderr: string;

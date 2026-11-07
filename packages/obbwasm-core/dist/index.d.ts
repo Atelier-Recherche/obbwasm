@@ -26,4 +26,10 @@ export * from "./pandocTypstBibliography.js";
 export * from "./pandocFactory.js";
 export * from "./typstVirtualMedia.js";
 export * from "./imposition.js";
+export * from "./markdownFootnotes.js";
+export * from "./markdownNormalize.js";
+export * from "./markdownPagination.js";
+export * from "./prepareMarkdown.js";
+export * from "./epubPageAlign.js";
+export * from "./epubExport.js";
 //# sourceMappingURL=index.d.ts.map

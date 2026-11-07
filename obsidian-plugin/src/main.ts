@@ -1,7 +1,7 @@
 import {
   BOOK_PRESETS_RELATIVE_DIR,
   buildImpositionMainTyp,
-  chunkArray,
+  buildImpositionPackets,
   compileTypstBookToPdf,
   yieldToMainThread,
   createPandocConvertFromWasmBuffer,
@@ -11,6 +11,8 @@ import {
   mountTypstPackagesFromLoader,
   overrideTypstLet,
   pandocMarkdownToTypst,
+  pandocMarkdownToEpub,
+  patchEpubPrintPageList,
   markdownHorizontalRuleFromBookValues,
   normalizeWikiImagesForPandoc,
   resolveRemoteImageFetchUrl,
@@ -22,7 +24,6 @@ import {
   parseTemplateMeta,
   applyTocAndBibPlacement,
   reconcileSectionOrder,
-  reorderSpreadSequence,
   resetTypstWasmImporterRegistration,
   spineThicknessMm,
   type BookCompileMeta,
@@ -57,7 +58,7 @@ import { migrateLegacyTypesetPath } from "./legacyTypesetPaths.js";
 import { listTypFiles } from "./listTypFiles.js";
 import { mergeManifestWithLocalDiscovered } from "./localTemplates.js";
 import { nodeFs, nodePath, tryNodeFs, tryNodePath } from "./platform.js";
-import { countPdfPages, initPdfJsWorker } from "./pdfPageCount.js";
+import { countPdfPages, extractPdfPageTexts, initPdfJsWorker } from "./pdfPageCount.js";
 import type { TemplatesManifestV1 } from "./templatesManifest.js";
 import { DEFAULT_TEMPLATES_MANIFEST_URL, GITHUB_REPO_ARCHIVE_MAIN } from "./urls.js";
 import { PANDOC_WASM_DOWNLOAD_URL, TYPST_COMPILER_WASM_DOWNLOAD_URL } from "./wasmFetch.js";
@@ -1071,6 +1072,58 @@ export default class ObbWasmBookPlugin extends Plugin {
     };
   }
 
+  /**
+   * EPUB synchronisé avec les numéros de page du PDF intérieur
+   * (alignement texte début-de-page PDF → XHTML + page-list EPUB3).
+   */
+  async compileActiveNoteToEpub(): Promise<{ epub: Uint8Array; fileBase: string; folder: string }> {
+    requireDesktopFs();
+    const file = this.app.workspace.getActiveFile();
+    if (!file) throw new Error("Aucun fichier actif.");
+    const text = await this.app.vault.read(file);
+    const convert = await this.ensurePandocConvert();
+    const normalizedMd = normalizeWikiImagesForPandoc(text);
+    const extraFiles = await this.collectPandocImageFiles(file, normalizedMd);
+    const bookLayout = this.parseBookLayout();
+    const { bibliography, csl } = await this.resolveBibliographyForPandoc();
+    const reportPhase = (msg: string) => this.reportCompilePhase(msg);
+
+    // Réutiliser le PDF intérieur déjà compilé si possible (mêmes pages que l’aperçu).
+    let pdfBytes = this.lastInteriorPdf;
+    if (!pdfBytes || pdfBytes.byteLength === 0) {
+      reportPhase("PDF intérieur manquant — compilation…");
+      const compiled = await this.compileActiveNoteToPdf();
+      pdfBytes = compiled.pdf;
+    }
+
+    reportPhase("Extraction textes pages PDF…");
+    const pageTexts = await extractPdfPageTexts(pdfBytes);
+    if (!pageTexts.length) {
+      throw new Error("PDF sans pages exploitables pour la sync EPUB.");
+    }
+
+    reportPhase("Pandoc → EPUB…");
+    const { epub } = await pandocMarkdownToEpub({
+      convert,
+      sourceText: text,
+      titleFallback: this.settings.title || file.basename,
+      bibliography,
+      csl,
+      extraFiles,
+      paginationAnchors: false,
+      epubTitlePage: bookLayout.values["title-page"] === true,
+    });
+
+    reportPhase("Alignement pages PDF → EPUB…");
+    const patched = await patchEpubPrintPageList(epub, pageTexts);
+    this.reportCompilePhase(`EPUB sync: ${pageTexts.length} page(s) PDF`);
+    return {
+      epub: patched,
+      fileBase: file.basename.replace(/\.md$/i, ""),
+      folder: file.parent?.path ?? "",
+    };
+  }
+
   async compileCoverPdf(): Promise<Uint8Array> {
     requireDesktopFs();
     const loader = createFsAssetLoader(this.resolveTemplatesRoot());
@@ -1126,10 +1179,7 @@ export default class ObbWasmBookPlugin extends Plugin {
     const loader = createFsAssetLoader(this.resolveTemplatesRoot());
     const totalPages = await countPdfPages(bytes);
     const allPages = Array.from({ length: totalPages }, (_, i) => i + 1);
-    const orderedBase = spec.kind === "spread" ? reorderSpreadSequence(allPages) : allPages;
-    const missing = (spec.packetSize - (orderedBase.length % spec.packetSize)) % spec.packetSize;
-    const ordered = orderedBase.concat(Array.from({ length: missing }, () => 0));
-    const packets = chunkArray(ordered, spec.packetSize);
+    const packets = buildImpositionPackets(spec.kind, allPages, spec.packetSize);
 
     const compiler = await this.ensureTypstCompiler();
     compiler.reset();
@@ -1153,59 +1203,107 @@ export default class ObbWasmBookPlugin extends Plugin {
     return Uint8Array.from(compiled.result);
   }
 
-  /** Chemin coffre normalisé du PDF auxiliaire pour la note active (`suffix` ex. `-obb`). */
-  getAuxPdfDestPath(suffix: string): string {
+  /** Chemin coffre normalisé du fichier auxiliaire pour la note active (`suffix` ex. `-obb`, `ext` ex. `pdf`). */
+  getAuxDestPath(suffix: string, ext = "pdf"): string {
     const file = this.app.workspace.getActiveFile();
     const base = file?.basename.replace(/\.md$/i, "") ?? "export";
     const folder = file?.parent?.path ?? "";
-    return normalizePath(folder ? `${folder}/${base}${suffix}.pdf` : `${base}${suffix}.pdf`);
+    const name = `${base}${suffix}.${ext.replace(/^\./, "")}`;
+    return normalizePath(folder ? `${folder}/${name}` : name);
   }
 
-  /**
-   * Indique si ce fichier du coffre est ouvert dans un onglet (visionneuse PDF, etc.).
-   * Ne se limite pas à `type === "pdf"` : les volets différés n’exposent pas toujours la vue PDF réelle.
-   */
-  isPdfOpenInWorkspace(vaultRelativePath: string): boolean {
-    let found = false;
+  /** Chemin coffre normalisé du PDF auxiliaire pour la note active (`suffix` ex. `-obb`). */
+  getAuxPdfDestPath(suffix: string): string {
+    return this.getAuxDestPath(suffix, "pdf");
+  }
+
+  /** Onglets (hors vue OBB) qui affichent déjà ce chemin coffre. */
+  collectLeavesShowingPath(vaultRelativePath: string): WorkspaceLeaf[] {
+    const leaves: WorkspaceLeaf[] = [];
     this.app.workspace.iterateAllLeaves((leaf) => {
-      if (found) return;
       for (const p of collectOpenFilePathsFromLeaf(leaf)) {
         if (vaultPathsEqual(p, vaultRelativePath)) {
-          found = true;
+          leaves.push(leaf);
           return;
         }
       }
     });
-    return found;
+    return leaves;
   }
 
-  /** Enregistre un PDF auxiliaire à côté de la note active (suffixe avant `.pdf`). */
-  async saveAuxPdf(pdf: Uint8Array, suffix: string): Promise<string> {
-    const dest = this.getAuxPdfDestPath(suffix);
-    if (this.isPdfOpenInWorkspace(dest)) {
-      throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
+  /**
+   * Ferme les onglets qui verrouillent le PDF cible (Windows / visionneuse Obsidian).
+   * Retourne true s’il faut rouvrir le fichier après écriture.
+   */
+  async releasePdfLeavesForWrite(vaultRelativePath: string): Promise<boolean> {
+    const leaves = this.collectLeavesShowingPath(vaultRelativePath);
+    if (leaves.length === 0) return false;
+    for (const leaf of leaves) leaf.detach();
+    // Laisse le temps au OS de relâcher le verrou fichier après fermeture de la vue.
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 150));
+    return true;
+  }
+
+  async reopenVaultFileInNewTab(vaultRelativePath: string): Promise<void> {
+    const f = this.app.vault.getAbstractFileByPath(normalizePath(vaultRelativePath));
+    if (f && "extension" in f) {
+      await this.app.workspace.getLeaf(true).openFile(f as TFile);
     }
-    const outBin = new Uint8Array(pdf.byteLength);
-    outBin.set(pdf);
+  }
+
+  /** Enregistre un binaire auxiliaire à côté de la note active. */
+  async saveAuxBinary(bytes: Uint8Array, suffix: string, ext: string): Promise<string> {
+    const dest = this.getAuxDestPath(suffix, ext);
+    let reopenPdf = false;
+    if (ext === "pdf") {
+      reopenPdf = await this.releasePdfLeavesForWrite(dest);
+    }
+    const outBin = new Uint8Array(bytes.byteLength);
+    outBin.set(bytes);
     const buf = outBin.buffer.slice(outBin.byteOffset, outBin.byteOffset + outBin.byteLength);
-    const existing = this.app.vault.getAbstractFileByPath(dest);
-    try {
+
+    const writeOnce = async (): Promise<void> => {
+      const existing = this.app.vault.getAbstractFileByPath(dest);
       if (existing && "extension" in existing) {
         await this.app.vault.modifyBinary(existing as TFile, buf);
       } else {
         await this.app.vault.createBinary(dest, buf);
       }
+    };
+
+    try {
+      await writeOnce();
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e);
-      if (this.isPdfOpenInWorkspace(dest)) {
-        throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
+      const locked = /EBUSY|EPERM|locked|being used|accès refusé|denied|in use/i.test(raw);
+      if (ext === "pdf" && locked) {
+        // Nouvelle tentative : onglets restants / verrou pas encore relâché.
+        const closedAgain = await this.releasePdfLeavesForWrite(dest);
+        reopenPdf = reopenPdf || closedAgain;
+        try {
+          await writeOnce();
+        } catch (e2) {
+          const raw2 = e2 instanceof Error ? e2.message : String(e2);
+          throw new Error(`${frLocale.ui.savePdfBlockedOpenViewer} (${raw2})`);
+        }
+      } else {
+        throw e;
       }
-      if (/EBUSY|EPERM|locked|being used|accès refusé|denied|in use/i.test(raw)) {
-        throw new Error(`${frLocale.ui.savePdfBlockedOpenViewer} (${raw})`);
+    }
+
+    if (reopenPdf) {
+      try {
+        await this.reopenVaultFileInNewTab(dest);
+      } catch {
+        /* l’écriture a réussi ; la réouverture est best-effort */
       }
-      throw e;
     }
     return dest;
+  }
+
+  /** Enregistre un PDF auxiliaire à côté de la note active (suffixe avant `.pdf`). */
+  async saveAuxPdf(pdf: Uint8Array, suffix: string): Promise<string> {
+    return this.saveAuxBinary(pdf, suffix, "pdf");
   }
 
   async activateView(): Promise<void> {
@@ -1569,6 +1667,11 @@ class ObbBookView extends ItemView {
       this.compileActionButtons.push(b);
       b.addEventListener("click", () => void this.runCompile());
     });
+    intActions.createEl("button", { text: frLocale.ui.exportEpub || "Exporter EPUB (pages PDF)" }, (b) => {
+      this.compileActionButtons.push(b);
+      b.title = frLocale.ui.tooltipExportEpub || "";
+      b.addEventListener("click", () => void this.runEpub());
+    });
     this.mountCompileStatusRow(intSec);
 
     scroll.createEl("div", { cls: "obbwasm-section-title", text: "Couverture" });
@@ -1720,9 +1823,6 @@ class ObbBookView extends ItemView {
     this.setStatus("Compilation… — les gros fichiers peuvent prendre plusieurs minutes.");
     this.setPreviewPanelOpen(true);
     try {
-      if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb"))) {
-        throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
-      }
       const { pdf, fileBase } = await this.plugin.compileActiveNoteToPdf();
       this.clearPdfPreview();
       const dest = await this.plugin.saveAuxPdf(pdf, "-obb");
@@ -1749,13 +1849,27 @@ class ObbBookView extends ItemView {
     }
   }
 
+  async runEpub(): Promise<void> {
+    this.setCompileBusy(true);
+    this.setStatus("Export EPUB (sync pages PDF)… — peut prendre plusieurs minutes.");
+    try {
+      const { epub, fileBase } = await this.plugin.compileActiveNoteToEpub();
+      const dest = await this.plugin.saveAuxBinary(epub, "-obb", "epub");
+      this.setStatus(`OK — ${fileBase}-obb.epub (${epub.byteLength} octets)`);
+      new Notice(`EPUB enregistré : ${dest}`);
+    } catch (e) {
+      const msg = (e as Error).message;
+      this.setStatus(`Erreur : ${msg}`);
+      new Notice(msg, 8000);
+    } finally {
+      this.setCompileBusy(false);
+    }
+  }
+
   async runCover(): Promise<void> {
     this.setCompileBusy(true);
     this.setStatus("Couverture…", { busy: true });
     try {
-      if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb-cover"))) {
-        throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
-      }
       const pdf = await this.plugin.compileCoverPdf();
       this.clearPdfPreview();
       const dest = await this.plugin.saveAuxPdf(pdf, "-obb-cover");
@@ -1775,9 +1889,6 @@ class ObbBookView extends ItemView {
     this.setCompileBusy(true);
     this.setStatus("Imposition…", { busy: true });
     try {
-      if (this.plugin.isPdfOpenInWorkspace(this.plugin.getAuxPdfDestPath("-obb-imposition"))) {
-        throw new Error(frLocale.ui.savePdfBlockedOpenViewer);
-      }
       const pdf = await this.plugin.compileImpositionPdf();
       this.clearPdfPreview();
       const dest = await this.plugin.saveAuxPdf(pdf, "-obb-imposition");

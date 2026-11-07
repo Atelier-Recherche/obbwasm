@@ -16,11 +16,22 @@ import {
   stripNonBookWikiLinks,
 } from "./pandocTypstLabels.js";
 import { patchPandocTypstMedia, stripBrokenMarkdownMedia } from "./pandocTypstMedia.js";
+import { normalizeInlineFootnotes } from "./markdownFootnotes.js";
+import { hideTypstPaginationTokens, injectMarkdownPaginationAnchors } from "./markdownPagination.js";
+import {
+  normalizePandocCitationPageShorthand,
+  normalizeWikiImagesForPandoc,
+} from "./markdownNormalize.js";
 import {
   buildObbBackMatterTypstFragment,
   normalizeWikiGlossaryIndexLinks,
   patchPandocTypstObbWikiRefs,
 } from "./wikiGlossaryIndex.js";
+
+export {
+  normalizePandocCitationPageShorthand,
+  normalizeWikiImagesForPandoc,
+} from "./markdownNormalize.js";
 
 export type PandocConvertFn = (
   options: Record<string, unknown>,
@@ -37,23 +48,6 @@ export type PandocConvertFn = (
 async function toUint8Array(data: string | Blob): Promise<Uint8Array> {
   if (typeof data === "string") return new TextEncoder().encode(data);
   return new Uint8Array(await data.arrayBuffer());
-}
-
-/** Obsidian `![[fichier]]` → `![](fichier)` pour que Pandoc traite les images locales. */
-export function normalizeWikiImagesForPandoc(markdown: string): string {
-  return markdown.replace(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, (_, path: string) => `![](${path.trim()})`);
-}
-
-/**
- * Raccourcis du type `[@clef p44]` (sans virgule) : Pandoc envoie un locator littéral « p44 » à citeproc,
- * qui ajoute déjà le libellé de page du CSL (« p. ») → rendu « p. p44 ». Même problème avec `[@clef, p44]`.
- * La forme canonique Pandoc est `[@clef, 44]` ou `[@clef, p. 44]` (virgule après la clé).
- */
-export function normalizePandocCitationPageShorthand(markdown: string): string {
-  let s = markdown;
-  s = s.replace(/\[@([^\s\],]+)\s*,\s*p(\d+)\]/g, "[@$1, $2]");
-  s = s.replace(/\[@([^\s\],]+)\s+p(\d+)\]/g, "[@$1, $2]");
-  return s;
 }
 
 /** Rendu Typst pour une ligne `---` / `***` / `___` (séparateur horizontal Markdown). */
@@ -95,6 +89,8 @@ export async function pandocMarkdownToTypst(params: {
   extraFiles?: Record<string, string | Blob>;
   /** Séparateurs `---` dans le Markdown : ligne Typst ou saut de page. */
   markdownHorizontalRule?: MarkdownHorizontalRuleTypst;
+  /** Ancres OBBPAG pour synchroniser les pages PDF avec un export EPUB. */
+  paginationAnchors?: boolean;
 }): Promise<{ typst: string; stderr: string; mediaFiles: Record<string, Uint8Array> }> {
   const {
     convert,
@@ -107,6 +103,7 @@ export async function pandocMarkdownToTypst(params: {
     csl,
     extraFiles,
     markdownHorizontalRule = "line",
+    paginationAnchors = false,
   } = params;
   const from =
     sourceFormat === "md"
@@ -120,12 +117,16 @@ export async function pandocMarkdownToTypst(params: {
     const dataUri = extractMarkdownDataUriImages(sourceTextForConvert);
     dataUriFiles = dataUri.files;
     sourceTextForConvert = dataUri.markdown;
+    sourceTextForConvert = normalizeInlineFootnotes(sourceTextForConvert);
     sourceTextForConvert = normalizeWikiImagesForPandoc(sourceTextForConvert);
     sourceTextForConvert = normalizeWikiGlossaryIndexLinks(sourceTextForConvert);
     sourceTextForConvert = stripNonBookWikiLinks(sourceTextForConvert);
     sourceTextForConvert = stripBrokenMarkdownMedia(sourceTextForConvert);
     if (bibliography) {
       sourceTextForConvert = normalizePandocCitationPageShorthand(sourceTextForConvert);
+    }
+    if (paginationAnchors) {
+      sourceTextForConvert = injectMarkdownPaginationAnchors(sourceTextForConvert).markdown;
     }
   }
   // Ne pas passer `extract-media` : pandoc-wasm pré-remplit ce chemin comme *fichier* vide,
@@ -165,6 +166,7 @@ export async function pandocMarkdownToTypst(params: {
   let out = patchPandocTypstObbWikiRefs(
     patchPandocTypstMedia(patchPandocTypstFragments(result.stdout || "", markdownHorizontalRule)),
   );
+  out = hideTypstPaginationTokens(out);
   out = injectTypstHeadingLabels(out);
   out = patchPandocTypstBrokenLabelRefs(out);
   const mediaFiles: Record<string, Uint8Array> = {};

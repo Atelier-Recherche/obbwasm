@@ -81,10 +81,11 @@
 )
 
 #let _line-leading(conf) = {
-  if conf.line-spacing-preset == "narrow" { 1.05em }
-  else if conf.line-spacing-preset == "wide" { 1.35em }
-  else if conf.line-spacing-preset == "custom" { conf.line-spacing }
-  else { conf.line-spacing }
+  let preset = conf.at("line-spacing-preset", default: "standard")
+  if preset == "narrow" { 1.05em }
+  else if preset == "wide" { 1.35em }
+  else if preset == "custom" { conf.at("line-spacing", default: 1.2em) }
+  else { 1.2em }
 }
 
 #let _title-line(conf) = {
@@ -103,10 +104,15 @@
 // Calé sur LaTeX \sectionbreak : page impaire (recto), verso blanc si besoin.
 #let _ensure-recto-with-blank-before() = {
   _front-matter-page()
-  pagebreak()
-  if calc.even(counter(page).get().first()) {
-    _front-matter-page()
-    pagebreak()
+  context {
+    let p = counter(page).get().first()
+    if p == 1 {
+      // Déjà en tête de document (recto) : ne pas créer de page vide.
+    } else if calc.even(p) {
+      pagebreak()
+    } else {
+      pagebreak(to: "odd")
+    }
   }
 }
 
@@ -194,7 +200,7 @@
 }
 
 #let _cover-block(conf) = {
-  pagebreak()
+  pagebreak(weak: true)
   align(center + horizon, [
     #text(font: title-font, size: 14pt, conf.title)
     #v(10mm)
@@ -294,23 +300,14 @@
   )
   apply-dora-text-styles()
 
-  if body-align == "center" {
-    set align(center)
-  } else if body-align == "right" {
-    set align(end)
-  } else if body-align == "justify-last-right" {
-    set align(end)
-  } else if body-align == "left" {
-    set align(start)
-  } else if (body-align == "justify" or body-align == "justify-last-left") {
-    set align(start)
-  } else {
-    set align(start)
-  }
-  show par: set par(
-    leading: _line-leading(conf),
-    justify: body-justify,
+  set align(
+    if body-align == "center" { center }
+    else if body-align == "right" or body-align == "justify-last-right" { end }
+    else { start }
   )
+  let leading = _line-leading(conf)
+  set par(leading: leading, justify: body-justify)
+  show par: set par(leading: leading, justify: body-justify)
 
   if conf.auto-break-long-tokens {
     let chunk-rx = regex("[A-Za-z0-9]{" + str(conf.auto-break-chunk-size) + "}")

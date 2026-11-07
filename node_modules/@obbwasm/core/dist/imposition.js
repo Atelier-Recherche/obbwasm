@@ -27,6 +27,28 @@ export function chunkArray(arr, size) {
         out.push(arr.slice(i, i + size));
     return out;
 }
+/**
+ * Paquets d’imposition à partir des pages 1..N.
+ *
+ * Spread (« à cheval ») : une seule brochure imbriquée (feuilles emboîtées).
+ *   — blancs en fin pour atteindre un multiple de 4 (une feuille = 4 pages) ;
+ *   — puis reorder global du bloc → ex. 5 pages → [1,□,2,□,3,□,4,5]
+ *     donc première feuille □|1 / 2|□ (pas des cahiers 4|1 indépendants).
+ *
+ * Signature : cahiers séparés de `packetSize` pages (padding + découpe séquentielle ;
+ *   le mapping left/right est dans buildImpositionMainTyp).
+ */
+export function buildImpositionPackets(kind, pages, packetSize) {
+    if (kind === "spread") {
+        const sheetUnit = 4;
+        const missing = (sheetUnit - (pages.length % sheetUnit)) % sheetUnit;
+        const padded = pages.concat(Array.from({ length: missing }, () => 0));
+        return [reorderSpreadSequence(padded)];
+    }
+    const missing = (packetSize - (pages.length % packetSize)) % packetSize;
+    const padded = pages.concat(Array.from({ length: missing }, () => 0));
+    return chunkArray(padded, packetSize);
+}
 export function buildImpositionMainTyp(kind, packetSize, packets, compensationMm) {
     if (packetSize % 4 !== 0 || packetSize <= 0) {
         throw new Error(`Template ${packetSize}${kind} non supporte (taille de paquet multiple de 4 requise).`);
@@ -59,7 +81,8 @@ export function buildImpositionMainTyp(kind, packetSize, packets, compensationMm
     const pageAt = (arr, idx) => arr[idx] ?? 0;
     packets.forEach((pack, idx) => {
         if (kind === "spread") {
-            for (let base = 0; base < packetSize; base += 4) {
+            // Une brochure : autant de feuilles (4 pages) que pack.length / 4.
+            for (let base = 0; base < pack.length; base += 4) {
                 const p1 = pageAt(pack, base + 0);
                 const p2 = pageAt(pack, base + 1);
                 const p3 = pageAt(pack, base + 2);
@@ -67,7 +90,7 @@ export function buildImpositionMainTyp(kind, packetSize, packets, compensationMm
                 lines.push(`#pair(${p2}, ${p1})`);
                 lines.push(`#pagebreak()`);
                 lines.push(`#pair(${p3}, ${p4})`);
-                if (base + 4 < packetSize)
+                if (base + 4 < pack.length)
                     lines.push(`#pagebreak()`);
             }
         }

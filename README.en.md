@@ -2,7 +2,7 @@
 
 <table>
 <tr>
-<td><img src="readme-media/BookBrew.png" alt="BookBrew" width="140" /></td>
+<td><img src="https://atelier.atechnologie.fr/wp-content/uploads/2026/09/BookBrew.webp" alt="BookBrew" width="140" /></td>
 <td align="left">
 <h1 style="margin:0">BookBrew</h1>
 <p style="margin:0.25em 0 0"><strong>Book composition studio</strong><br/>Markdown → PDF · Pandoc WASM · Typst WASM · Obsidian plugin</p>
@@ -10,7 +10,7 @@
 </tr>
 </table>
 
-<a href="https://atelier.atechnologie.fr/" title="l'Atelier – book fabrication and research tools association"><img src="readme-media/logoasso.jpg" alt="l'Atelier" width="200" /></a>  
+<a href="https://atelier.atechnologie.fr/" title="l'Atelier – book fabrication and research tools association"><img src="https://atelier.atechnologie.fr/wp-content/uploads/2026/11/logoasso.webp" alt="l'Atelier" width="200" /></a>  
 <sub>Developed by <a href="https://atelier.atechnologie.fr/">l'Atelier</a> — book fabrication and research tools (EHESS)</sub>
 
 <p>

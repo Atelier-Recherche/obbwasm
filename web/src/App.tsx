@@ -38,17 +38,17 @@ import {
   fetchCachedArrayBuffer,
   compileTypstBookToPdf,
   pandocMarkdownToTypst,
+  pandocMarkdownToEpub,
+  patchEpubPrintPageList,
   markdownHorizontalRuleFromBookValues,
   mergeVisibleBookOptionIds,
   createTypstCompiler,
   mountTypstPackagesFromLoader,
   overrideTypstLet,
   firstDiagnosticMessage,
-  buildImpositionTyp,
-  parseImpositionMeta,
-  chunkArray,
+  buildImpositionMainTyp,
+  buildImpositionPackets,
   parseImpositionTemplateSpec,
-  reorderSpreadSequence,
   spineThicknessMm,
   PAPER_THICKNESS_MM,
   resolveRemoteImageFetchUrl,
@@ -131,6 +131,28 @@ async function loadPdfPageCount(file: File): Promise<number> {
   const buf = await file.arrayBuffer();
   const pdf = await getDocument({ data: buf }).promise;
   return pdf.numPages;
+}
+
+/** Textes page par page pour cartographier les jetons OBBPAG → n° de page PDF. */
+async function extractPdfPageTextsFromBytes(bytes: Uint8Array): Promise<string[]> {
+  const pdf = await getDocument({ data: bytes.slice() }).promise;
+  try {
+    const texts: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const parts: string[] = [];
+      for (const item of content.items) {
+        if (item && typeof item === "object" && "str" in item) {
+          parts.push(String((item as { str: string }).str));
+        }
+      }
+      texts.push(parts.join(""));
+    }
+    return texts;
+  } finally {
+    await pdf.destroy().catch(() => undefined);
+  }
 }
 
 async function renderPdfFirstPageToDataUrl(file: File): Promise<string> {
@@ -630,6 +652,112 @@ export default function App() {
     }
   }
 
+  /** EPUB avec page-list alignée sur les numéros de page du PDF intérieur. */
+  async function exportEpubWithPdfPages() {
+    if (!sourceText.trim() && !sourceFileBlob) {
+      setStatus("Aucune source chargee.");
+      return;
+    }
+    if (sourceFormat !== "md" && sourceFormat !== "markdown") {
+      setStatus("L’export EPUB synchronise requiert une source Markdown (normalisez d’abord si besoin).");
+      return;
+    }
+    setStatus("Export EPUB synchronise avec pages PDF…");
+    try {
+      const pandoc = await import("pandoc-wasm");
+      const extraFiles: Record<string, Blob> = {};
+      for (const f of attachedImages) {
+        extraFiles[f.name] = f;
+        extraFiles[`media/${f.name}`] = f;
+      }
+      const bib = bibFile ? { name: "obb-refs.bib", blob: bibFile } : null;
+      const csl = bibFile && cslFile ? { name: "obb-style.csl", blob: cslFile } : null;
+      const mdSource = sourceText || "";
+
+      // Préférer le PDF déjà généré (mêmes pages que l’aperçu).
+      let pdfBytes: Uint8Array | null = null;
+      if (pdfFile) {
+        pdfBytes = new Uint8Array(await pdfFile.arrayBuffer());
+      }
+      if (!pdfBytes || pdfBytes.byteLength === 0) {
+        if (!generatedTypst.trim()) {
+          setStatus("Compilez d’abord le PDF (Md → Typst → PDF), puis exportez l’EPUB.");
+          return;
+        }
+        setProgress({ phase: "EPUB : compilation PDF…" });
+        const tpl = templates.find((t) => t.id === selectedTemplate);
+        if (!tpl?.mainTypPath) {
+          setStatus("Aucun template selectionne.");
+          return;
+        }
+        const tplRes = await apiFetch(`${apiBase}/template-source.php?path=${encodeURIComponent(tpl.mainTypPath)}`);
+        const tplData = await tplRes.json();
+        if (!tplData.ok || !tplData.source) {
+          setStatus(`Template non charge: ${tplData.error ?? "inconnu"}`);
+          return;
+        }
+        const compiler = await ensureWasmCompiler();
+        const out = await compileTypstBookToPdf({
+          compiler,
+          loader: phpAssetLoader,
+          templateMainSource: String(tplData.source),
+          generatedTypst,
+          bookLayout,
+          meta: { title, author, publisher },
+          mediaFiles: pandocMediaFiles,
+          fetchRemoteBytes: async (url: string) => {
+            try {
+              const fetchUrl = resolveRemoteImageFetchUrl(url);
+              const r = await fetch(fetchUrl, { mode: "cors" });
+              if (!r.ok) return null;
+              return new Uint8Array(await r.arrayBuffer());
+            } catch {
+              return null;
+            }
+          },
+        });
+        if (!out.pdf) {
+          setStatus("Compilation PDF (sync EPUB) sans resultat.");
+          return;
+        }
+        pdfBytes = out.pdf;
+      }
+
+      setProgress({ phase: "EPUB : extraction textes pages…" });
+      const pageTexts = await extractPdfPageTextsFromBytes(pdfBytes);
+      pushLog(`EPUB: ${pageTexts.length} page(s) PDF a aligner.`);
+
+      setProgress({ phase: "EPUB : Pandoc → EPUB…" });
+      const { epub } = await pandocMarkdownToEpub({
+        convert: pandoc.convert,
+        sourceText: mdSource,
+        titleFallback: title,
+        bibliography: bib,
+        csl,
+        extraFiles: Object.keys(extraFiles).length ? extraFiles : undefined,
+        paginationAnchors: false,
+        epubTitlePage: bookLayout.values["title-page"] === true,
+      });
+
+      setProgress({ phase: "EPUB : alignement pages…" });
+      const patched = await patchEpubPrintPageList(epub, pageTexts);
+      const blob = new Blob([new Uint8Array(patched)], { type: "application/epub+zip" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(sourceFileName || title || "livre").replace(/\.[^.]+$/, "")}-obb.epub`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus(`EPUB genere (${patched.byteLength} octets, ${pageTexts.length} pages PDF).`);
+      pushLog(`EPUB OK: ${patched.byteLength} bytes.`);
+    } catch (err) {
+      setStatus(`Erreur EPUB: ${(err as Error).message}`);
+      pushLog(`Erreur EPUB: ${(err as Error).message}`);
+    } finally {
+      setProgress(null);
+    }
+  }
+
   async function compileCoverTypstToPdfWasm() {
     setProgress({ phase: "Couverture Typst → PDF…" });
     setStatus("Compilation couverture Typst WASM -> PDF...");
@@ -698,11 +826,11 @@ export default function App() {
       }
       const totalPages = await loadPdfPageCount(pdfFile);
       const allPages = Array.from({ length: totalPages }, (_, i) => i + 1);
-      const orderedBase = spec.kind === "spread" ? reorderSpreadSequence(allPages) : allPages;
-      const missing = (spec.packetSize - (orderedBase.length % spec.packetSize)) % spec.packetSize;
-      const ordered = orderedBase.concat(Array.from({ length: missing }, () => 0));
-      const packets = chunkArray(ordered, spec.packetSize);
-      pushLog(`Imposition: ${spec.kind}, paquet=${spec.packetSize}, pages=${totalPages}, padding=${missing}, paquets=${packets.length}`);
+      const packets = buildImpositionPackets(spec.kind, allPages, spec.packetSize);
+      const paddedCount = packets.reduce((n, p) => n + p.length, 0);
+      pushLog(
+        `Imposition: ${spec.kind}, paquet=${spec.packetSize}, pages=${totalPages}, padding=${paddedCount - totalPages}, paquets=${packets.length}`,
+      );
 
       const compiler = await ensureWasmCompiler();
       compiler.reset();
@@ -713,17 +841,10 @@ export default function App() {
       compiler.mapShadow("export.pdf", pdfBytes);
       const compensationMm = Number((-11 * impositionPaperThicknessMm).toFixed(2));
       const templateSource = (await phpAssetLoader.fetchTextFile(path)) ?? "";
-      const layout = parseImpositionMeta(templateSource);
-      if (layout) {
-        pushLog(`Imposition meta: mode=${layout.mode}, grille=${layout.gridCols}x${layout.gridRows}, feuille=${layout.sheetWidth}x${layout.sheetHeight}`);
+      if (templateSource.trim()) {
+        pushLog(`Imposition template charge: ${path} (${templateSource.length} car.)`);
       }
-      const mainSource = buildImpositionTyp({
-        layout,
-        kind: spec.kind,
-        packetSize: spec.packetSize,
-        packets,
-        compensationMm,
-      });
+      const mainSource = buildImpositionMainTyp(spec.kind, spec.packetSize, packets, compensationMm);
       compiler.addSource("/main.typ", mainSource);
       const compiled = await compiler.runWithWorld(
         { root: "/", mainFilePath: "/main.typ", inputs: {} },
@@ -1242,6 +1363,14 @@ export default function App() {
               onClick={() => void compileTypstToPdfWasm()}
             >
               <Printer size={18} aria-hidden /> {t("ui.pdf")}
+            </button>
+            <button
+              type="button"
+              className="btn-with-icon"
+              title={t("ui.tooltipExportEpub")}
+              onClick={() => void exportEpubWithPdfPages()}
+            >
+              <BookMarked size={18} aria-hidden /> {t("ui.exportEpub")}
             </button>
             <button type="button" className="btn-with-icon" title={t("ui.downloadInterior")} onClick={downloadGeneratedPdf}>
               <Download size={16} aria-hidden /> {t("ui.download")}
